@@ -16,6 +16,7 @@ namespace ExcelMate
 
         public DisplayWriter(mExcelMate timer, ManualResetEvent rES)
         {
+            // Marcus testar det här med source control
             myTimer = timer;
             m_EventStopWriteToDisplay = rES;
         }
