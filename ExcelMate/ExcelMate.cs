@@ -1,291 +1,280 @@
-using System;
-using System.Drawing;
-using System.Text;
-using System.Windows.Forms;
-using Mac.Excel9.Interop;
-using System.Threading;
-using System.IO.Ports;
-using System.Net;
-using System.IO;
-
 namespace ExcelMate
 {
+    using Mac.Excel9.Interop;
+    using System;
+    using System.ComponentModel;
+    using System.Diagnostics;
+    using System.Drawing;
+    using System.Globalization;
+    using System.IO;
+    using System.IO.Ports;
+    using System.Net;
+    using System.Runtime.CompilerServices;
+    using System.Runtime.InteropServices;
+    using System.Threading;
+    using System.Windows.Forms;
+
     public partial class mExcelMate : Form
     {
-
-        //
-        // TODO:
-        //
-        //
-
-        #region Public Delegates
-        public delegate void TrackMateCallback(string message, int lane, int type);
-        #endregion
-
-        #region variables
-        Thread readThread;
-        Thread writeThreadLeft;
-        Thread writeThreadRight;
-        ManualResetEvent m_EventStopThread;
-        ManualResetEvent m_EventResetTimer;
-        ManualResetEvent m_EventStopWriteToDisplayLeft;
-        ManualResetEvent m_EventStopWriteToDisplayRight;
+        private Thread readThread;
+        private Thread writeThreadLeft;
+        private Thread writeThreadRight;
+        private ManualResetEvent m_EventStopThread;
+        private ManualResetEvent m_EventResetTimer;
+        private ManualResetEvent m_EventStopWriteToDisplayLeft;
+        private ManualResetEvent m_EventStopWriteToDisplayRight;
         public TrackMateCallback mTrackMateCallback;
-
         private Mac.Excel9.Interop.Application objExcel = null;
         private Workbook theWorkbook = null;
-        private static RaceTypes m_nRaceType = 0; // 0==single lane, 1==dual qual, 2 == dual elimination 
-        private String m_strReportSiteSelection = "";
-        private Boolean m_bolTrackmateVersion = false;
-        private Boolean m_bolDisplayZeroReaction = false;
-        private String m_strWorkBookName = "";
+        private static RaceTypes m_nRaceType = RaceTypes.SingleLane;
+        private string m_strReportSiteSelection = "";
         private string m_strLogFile = "";
-
-        #endregion variables
-
-        #region enums
-
-        private enum RaceTypes{ NotSet = -1, SingleLane = 0, Qualification = 1, Elimination = 2};
-        private enum Lane { Left = 1, Right = 2 };
-
-        #endregion enums
+        private bool m_bolTrackmateVersion = false;
+        private bool m_bolDisplayZeroReaction = false;
+        private string m_strWorkBookName = "";
+        private bool m_bolSendURL = true;
+        private Color leftColor = Color.White;
+        private Color rightColor = Color.Red;
 
         public mExcelMate()
         {
             InitializeComponent();
             try
             {
-                objExcel = new Mac.Excel9.Interop.Application();
+                this.objExcel = new ApplicationClass();
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                MacMessageBox MMB = new MacMessageBox("The startup of this application failed, probably because you do not have Excel installed on the computer.", MessageBoxButtons.OK);
-                MMB.StartPosition = FormStartPosition.CenterParent;
-                MMB.ShowDialog();
+                new MacMessageBox("The startup of this application failed, probably because you do not have Excel installed on the computer.", MessageBoxButtons.OK) { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
                 return;
             }
-            mTrackMateCallback = new TrackMateCallback(this.AddTrackMateMessage);
-            m_EventStopThread = new ManualResetEvent(false);
-            m_EventResetTimer = new ManualResetEvent(false);
-
-            m_EventStopWriteToDisplayLeft = new ManualResetEvent(false);
-            m_EventStopWriteToDisplayRight = new ManualResetEvent(false);
-
-            foreach (string s in SerialPort.GetPortNames())
+            this.mTrackMateCallback = new TrackMateCallback(this.AddTrackMateMessage);
+            this.m_EventStopThread = new ManualResetEvent(false);
+            this.m_EventResetTimer = new ManualResetEvent(false);
+            this.m_EventStopWriteToDisplayLeft = new ManualResetEvent(false);
+            this.m_EventStopWriteToDisplayRight = new ManualResetEvent(false);
+            foreach (string str in SerialPort.GetPortNames())
             {
-                cbComPort.Items.Add(s);
-                cbDisplayPortLeft.Items.Add(s);
-                cbDisplayPortRight.Items.Add(s);
+                this.cbComPort.Items.Add(str);
+                this.cbDisplayPortLeft.Items.Add(str);
+                this.cbDisplayPortRight.Items.Add(str);
             }
-
-            cbComPort.SelectedIndex = -1;
-            cbDisplayPortLeft.SelectedIndex = -1;
-            cbDisplayPortRight.SelectedIndex = -1;
-
-            cbDisplays.Checked = false;
-
-            tbLeftRaw.Text = "";
-            tbLeftReaction.Text = "";
-            cbLeftCones.SelectedIndex = 0;
-            cbLeftRider.SelectedIndex = -1;
-            tbRightRaw.Text = "";
-            tbRightReaction.Text = "";
-            cbRightCones.SelectedIndex = 0;
-            cbRigthRider.SelectedIndex = -1;
-            m_strLogFile = "RaceLog_" + DateTime.Today.ToString("yyyyMMdd") + ".log";
-            cbRightColor.Enabled = false;
-            cbLeftColor.Enabled = false;
-            cbRightColor.SelectedIndex = 0;
-            cbLeftColor.SelectedIndex = 0;
+            this.cbComPort.SelectedIndex = -1;
+            this.cbDisplayPortLeft.SelectedIndex = -1;
+            this.cbDisplayPortRight.SelectedIndex = -1;
+            this.cbDisplays.Checked = false;
+            this.tbLeftRaw.Text = "";
+            this.tbLeftReaction.Text = "";
+            this.cbLeftCones.SelectedIndex = 0;
+            this.cbLeftRider.SelectedIndex = -1;
+            this.tbRightRaw.Text = "";
+            this.tbRightReaction.Text = "";
+            this.cbRightCones.SelectedIndex = 0;
+            this.cbRigthRider.SelectedIndex = -1;
+            this.m_strLogFile = "RaceLog_" + DateTime.Today.ToString("yyyyMMdd") + ".log";
+            this.cbRightColor.Enabled = false;
+            this.cbLeftColor.Enabled = false;
+            this.cbRightColor.SelectedIndex = 0;
+            this.cbLeftColor.SelectedIndex = 0;
         }
 
-        #region ExcelStuff
+        private void AddTrackMateMessage(string message, int lane, int type)
+        {
+            string str;
+            string text;
+            string str3;
+            string str4;
+            if (type == 0)
+            {
+                if (!this.cbDiscardReactionTimes.Checked)
+                {
+                    if ((lane == 1) || ((m_nRaceType == RaceTypes.SingleLane) && this.cbSingleLanePort.Checked))
+                    {
+                        this.tbLeftReaction.Text = message;
+                        if ((this.cbDisplays.Checked && this.m_bolTrackmateVersion) && (this.writeThreadLeft == null))
+                        {
+                            this.StartDisplayThreadLeft();
+                        }
+                    }
+                    else
+                    {
+                        this.tbRightReaction.Text = message;
+                        if ((this.cbDisplays.Checked && this.m_bolTrackmateVersion) && (this.writeThreadRight == null))
+                        {
+                            this.StartDisplayThreadRight();
+                        }
+                    }
+                }
+            }
+            else if ((lane == 1) || ((m_nRaceType == RaceTypes.SingleLane) && this.cbSingleLanePort.Checked))
+            {
+                this.tbLeftRaw.Text = message;
+            }
+            else
+            {
+                this.tbRightRaw.Text = message;
+            }
+            this.WriteToLogfile(message + " lane: " + lane.ToString());
+            string selectedItem = "";
+            if (lane == 1)
+            {
+                str = this.cbLeftRider.SelectedItem.ToString().Trim();
+                text = this.tbLeftReaction.Text;
+                str3 = this.tbLeftRaw.Text.Replace(".", ",");
+                str4 = this.cbLeftCones.SelectedItem.ToString();
+                selectedItem = (string)this.cbLeftColor.SelectedItem;
+            }
+            else
+            {
+                str = this.cbRigthRider.SelectedItem.ToString().Trim();
+                text = this.tbRightReaction.Text;
+                str3 = this.tbRightRaw.Text.Replace(".", ",");
+                str4 = this.cbRightCones.SelectedItem.ToString();
+                selectedItem = (string)this.cbRightColor.SelectedItem;
+            }
+            if (m_nRaceType == RaceTypes.SingleLane)
+            {
+                selectedItem = "R";
+            }
+            this.submitRunToWeb(str, text, str3, str4, selectedItem, false);
+        }
+
+        private void bnCheckId_Click(object sender, EventArgs e)
+        {
+            string fileName = "http://www.slalomskateboarder.com/ISSA/Racing_log/ISSA_race_log.pdf";
+            Process.Start(fileName);
+        }
+
+        private void bnConnect_Click_1(object sender, EventArgs e)
+        {
+            if (this.bnConnect.Text == "Connect!")
+            {
+                this.startThread();
+            }
+            else
+            {
+                this.StopThread();
+                this.bnConnect.Text = "Connect!";
+            }
+        }
+
+        private void bnLogfile_Click(object sender, EventArgs e)
+        {
+            this.openFileDialog1.FileName = "*.log";
+            if (this.openFileDialog1.ShowDialog() == DialogResult.OK)
+            {
+                this.m_strLogFile = this.openFileDialog1.FileName;
+            }
+        }
 
         private void bnOpenWorkBook_Click(object sender, EventArgs e)
         {
             this.Cursor = Cursors.WaitCursor;
-
             m_nRaceType = RaceTypes.NotSet;
             this.openFileDialog1.FileName = "*.xls";
             if (this.openFileDialog1.ShowDialog() == DialogResult.OK)
             {
-                tbFileName.Text = openFileDialog1.FileName;
-
+                this.tbFileName.Text = this.openFileDialog1.FileName;
                 try
                 {
-                    System.Globalization.CultureInfo oldCI = Thread.CurrentThread.CurrentCulture;
-                    Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("en-US");
-
-                    // close old stuff
-                    if (theWorkbook != null)
+                    CultureInfo currentCulture = Thread.CurrentThread.CurrentCulture;
+                    Thread.CurrentThread.CurrentCulture = new CultureInfo("en-US");
+                    if (this.theWorkbook != null)
                     {
-                        theWorkbook.Save();
-                        theWorkbook.Close(true, m_strWorkBookName, false);
-                        objExcel.Visible = false;
-                        objExcel = null;
-                        Thread.Sleep(1000);
-                        objExcel = new Mac.Excel9.Interop.Application();
+                        this.theWorkbook.Save();
+                        this.theWorkbook.Close(true, this.m_strWorkBookName, false);
+                        this.objExcel.Visible = false;
+                        this.objExcel = null;
+                        Thread.Sleep(0x3e8);
+                        this.objExcel = new ApplicationClass();
                     }
-
-                    theWorkbook = objExcel.Workbooks.Open(tbFileName.Text, 0, false, 5, "", "", true, Mac.Excel9.Interop.XlPlatform.xlWindows, "\t", false, false, 0, true);
-
-                    Thread.CurrentThread.CurrentCulture = oldCI;
+                    this.theWorkbook = this.objExcel.Workbooks.Open(this.tbFileName.Text, 0, false, 5, "", "", true, XlPlatform.xlWindows, "\t", false, false, 0, true);
+                    Thread.CurrentThread.CurrentCulture = currentCulture;
                 }
-                catch (Exception ex)
+                catch (Exception exception)
                 {
-                    MacMessageBox MMB = new MacMessageBox("I guess you were not able to open the workbook. Please make sure it is available and not readonly. "+ ex.Message);
-                    MMB.StartPosition = FormStartPosition.CenterParent;
-                    MMB.ShowDialog();
-                    tbFileName.Text = "";
+                    new MacMessageBox("I guess you were not able to open the workbook. Please make sure it is available and not readonly. " + exception.Message) { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+                    this.tbFileName.Text = "";
                     return;
                 }
-
-                // get the collection of sheets in the workbook
-                Mac.Excel9.Interop.Sheets sheets = theWorkbook.Worksheets;
-                cbWorkSheet.Items.Clear();
-
-                for (int i = 1; i <= sheets.Count; i++)
+                Sheets worksheets = this.theWorkbook.Worksheets;
+                this.cbWorkSheet.Items.Clear();
+                for (int i = 1; i <= worksheets.Count; i++)
                 {
-                    Mac.Excel9.Interop._Worksheet WS = (Mac.Excel9.Interop._Worksheet)sheets.get_Item(i);
-                    cbWorkSheet.Items.Add(WS.Name);
+                    _Worksheet worksheet = (_Worksheet)worksheets.get_Item(i);
+                    this.cbWorkSheet.Items.Add(worksheet.Name);
                 }
-                this.Text = tbFileName.Text;
-                m_strWorkBookName = tbFileName.Text;
+                this.Text = this.tbFileName.Text;
+                this.m_strWorkBookName = this.tbFileName.Text;
             }
             this.Cursor = Cursors.Default;
         }
 
-        private void cbWorkSheet_SelectedIndexChanged(object sender, EventArgs e)
+        private void bnRefreshList_Click(object sender, EventArgs e)
         {
-            Mac.Excel9.Interop._Worksheet WS = null;
+            if ((m_nRaceType == RaceTypes.SingleLane) || (m_nRaceType == RaceTypes.Qualification))
+            {
+                _Worksheet wS = null;
+                CultureInfo currentCulture = Thread.CurrentThread.CurrentCulture;
+                Thread.CurrentThread.CurrentCulture = new CultureInfo("en-US");
+                wS = (_Worksheet)this.theWorkbook.Worksheets.get_Item(this.cbWorkSheet.SelectedIndex + 1);
+                wS.Activate();
+                this.FillRiderDropDownsSingle(wS);
+                Thread.CurrentThread.CurrentCulture = currentCulture;
+            }
+        }
 
-            try{
-                bnRefreshList.Visible = true;
-                System.Globalization.CultureInfo oldCI = Thread.CurrentThread.CurrentCulture;
-                Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("en-US");
-                WS = (Mac.Excel9.Interop._Worksheet)theWorkbook.Worksheets.get_Item(cbWorkSheet.SelectedIndex + 1);
-                WS.Activate();
-                objExcel.Visible = true;
-                this.TopMost = true;
-                this.TopMost = false;
-                cbRound.Items.Clear();
-
-                // this is qualification or single lane
-                if (WS.Name.ToLower().IndexOf("qual") != -1){
-                    MacMessageBox MMB = new MacMessageBox("This race will be treated as qualification in head 2 head format (since the workbook contains 'qual').");
-                    MMB.StartPosition = FormStartPosition.CenterParent;
-                    MMB.ShowDialog();
-                    m_nRaceType = RaceTypes.Qualification;
-                }else if(WS.Name.ToLower().IndexOf("elim") != -1){
-                    MacMessageBox MMB = new MacMessageBox("This race will be treated as eliminatin in head 2 head format (since the workbook contains 'elim').");
-                    MMB.StartPosition = FormStartPosition.CenterParent;
-                    MMB.ShowDialog();
-                    m_nRaceType = RaceTypes.Elimination;
-                }else{
-                    MacMessageBox MMB = new MacMessageBox("This race will be treated as single lane (since the workbook does not contain 'qual' or 'elim').");
-                    MMB.StartPosition = FormStartPosition.CenterParent;
-                    MMB.ShowDialog();
-                    m_nRaceType = RaceTypes.SingleLane;
-                }
-
-                if (m_nRaceType == RaceTypes.SingleLane || m_nRaceType == RaceTypes.Qualification){
-                    FillRiderDropDownsSingle(WS);
-                }
-                else
+        private void bnReset_Click(object sender, EventArgs e)
+        {
+            DialogResult no = DialogResult.No;
+            if ((this.tbLeftRaw.Text.Length != 0) || (this.tbRightRaw.Text.Length != 0))
+            {
+                no = MessageBox.Show("It seems like you haven't saved the latest data. Would you like to save first?", "Forgot to save?", MessageBoxButtons.YesNo);
+            }
+            if (no == DialogResult.No)
+            {
+                if ((this.readThread != null) && this.readThread.IsAlive)
                 {
-                    cbRound.Enabled = true;
-                    bnRefreshList.Visible = false;
-
-                    Mac.Excel9.Interop.Range range = WS.get_Range("B1", "B99");
-                    System.Array myvalues = (System.Array)range.Cells.Value2;
-                    string[] strArray = ConvertToStringArray(myvalues);
-
-                    foreach (String cellValue in strArray)
+                    this.m_EventResetTimer.Set();
+                    Thread.Sleep(0x3e8);
+                    this.m_EventResetTimer.Reset();
+                    this.tbLeftRaw.Text = "";
+                    this.tbRightRaw.Text = "";
+                    this.tbLeftReaction.Text = "";
+                    this.tbRightReaction.Text = "";
+                    this.m_bolSendURL = true;
+                    if (this.cbDisplays.Checked && !this.m_bolTrackmateVersion)
                     {
-                        if (cellValue.ToLower().IndexOf("round") != -1)
+                        if (this.writeThreadLeft == null)
                         {
-                            if (cellValue.ToLower().IndexOf("final") != -1)
-                            {
-                                cbRound.Items.Add("Final & consi");
-                            }
-                            else if (cellValue.ToLower().IndexOf("cons") != -1)
-                            {
-                            }
-                            else
-                            {
-                                cbRound.Items.Add(cellValue);
-                            }
+                            this.StartDisplayThreadLeft();
+                        }
+                        if (this.writeThreadRight == null)
+                        {
+                            this.StartDisplayThreadRight();
                         }
                     }
-
-                    if (cbRound.Items.Count == 0)
+                    if (this.cbLiveReport.Checked)
                     {
-                        MacMessageBox MMB = new MacMessageBox("No racers was found in the Excel sheet. If this is single lane or qualification remember that \r\nthe name of the workbook must contain 'qual' in order for the program to find the racers.");
-                        MMB.StartPosition = FormStartPosition.CenterParent;
-                        MMB.ShowDialog();
+                        if (this.tbEventId.Text.Length == 0)
+                        {
+                            new MacMessageBox("You need to fill in the Live Reporter Id in order to submit times to the web. Get your own reporter Id, send an email to marcus@ettsexett.com.") { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+                        }
+                        else if (this.tbReporterId.Text.Length == 0)
+                        {
+                            new MacMessageBox("You need to fill in the EventId in order to submit times to the web. To get the event Id, send an email to marcus@ettsexett.com.") { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+                        }
+                        else
+                        {
+                            this.submitRunToWeb("", "", "", "", "", true);
+                        }
                     }
-                }
-                Thread.CurrentThread.CurrentCulture = oldCI;
-            }
-            catch (Exception ex)
-            {
-                MacMessageBox MMB = new MacMessageBox("Oops! We were not able to read the excelsheet that you previously selected. Did you kill it? Please re-open the spread sheet. "+ ex.Message);
-                MMB.StartPosition = FormStartPosition.CenterParent;
-                MMB.ShowDialog();
-            }
-        }
-
-        private void FillRiderDropDownsSingle(Mac.Excel9.Interop._Worksheet WS)
-        {
-            cbRound.Enabled = false;
-            cbLeftRider.Items.Clear();
-            cbRigthRider.Items.Clear();
-            Range range = WS.get_Range("C1", "C99");
-            Array myvalues = (Array)range.Cells.Value2;
-            string[] strArray = ConvertToStringArray(myvalues);
-            string strStartRound = "";
-            int nStartValue = 2;
-            foreach (String cellValue in strArray)
-            {
-                if (cellValue.ToLower().IndexOf("name") != -1)
-                {
-                    nStartValue++;
-                    strStartRound = "C" + nStartValue.ToString();
                 }
                 else
                 {
-                    nStartValue++;
-                }
-
-                if (strStartRound != "")
-                {
-                    string strCellRiderName = "C" + nStartValue.ToString();
-                    Range range0 = WS.get_Range(strCellRiderName, strCellRiderName);
-                    if (range0.Value2 == null)
-                    {
-                        break;
-                    }
-                    string strRiderName = range0.Cells.Value2.ToString();
-                    cbLeftRider.Items.Add(strRiderName);
-                    cbRigthRider.Items.Add(strRiderName);
+                    new MacMessageBox("I don't think you got a connection to the Trackmate.") { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
                 }
             }
-            tabControl1.SelectedIndex = 1;
-        }
-
-        string[] ConvertToStringArray(System.Array values)
-        {
-            // create a new string array
-            string[] theArray = new string[values.Length];
-            // loop through the 2-D System.Array and populate the 1-D String Array
-            for (int i = 1; i <= values.Length; i++)
-            {
-                if (values.GetValue(i, 1) == null)
-                    theArray[i - 1] = "";
-                else
-                    theArray[i - 1] = (string)values.GetValue(i, 1).ToString();
-            }
-            return theArray;
         }
 
         private void bnSaveLeft_Click(object sender, EventArgs e)
@@ -294,29 +283,29 @@ namespace ExcelMate
             switch (m_nRaceType)
             {
                 case RaceTypes.SingleLane:
-                    {
-                        saveSingleLaneRace();
-                        break;
-                    }
+                    this.saveSingleLaneRace();
+                    this.m_bolSendURL = false;
+                    break;
+
                 case RaceTypes.Qualification:
                     {
-                        bool save = false;
-                        save = saveDualQualification(Lane.Left);
-                        save = saveDualQualification(Lane.Right);
-                        if (save)
+                        bool flag = false;
+                        flag = this.saveDualQualification(Lane.Left);
+                        if (this.saveDualQualification(Lane.Right))
                         {
-                            SaveToExcel();
+                            this.SaveToExcel();
+                            this.m_bolSendURL = false;
                         }
                         break;
                     }
                 case RaceTypes.Elimination:
                     {
-                        bool save = false;
-                        save = saveDualLaneRace(Lane.Left);
-                        save = saveDualLaneRace(Lane.Right);
-                        if (save)
+                        bool flag3 = false;
+                        flag3 = this.saveDualLaneRace(Lane.Left);
+                        if (this.saveDualLaneRace(Lane.Right))
                         {
-                            SaveToExcel();
+                            this.SaveToExcel();
+                            this.m_bolSendURL = false;
                         }
                         break;
                     }
@@ -324,751 +313,468 @@ namespace ExcelMate
             this.Cursor = Cursors.Default;
         }
 
-        private Boolean isRiderSelected(Lane lane, Boolean showMsg)
+        private void bnTest_Click(object sender, EventArgs e)
         {
-            if (lane == Lane.Left)
+            if (((this.tabControl1.SelectedIndex != 0) && this.cbDisplays.Checked) && (((this.cbComPort.Text == this.cbDisplayPortLeft.Text) || (this.cbComPort.Text == this.cbDisplayPortRight.Text)) || (this.cbDisplayPortLeft.Text == this.cbDisplayPortRight.Text)))
             {
-                if (cbLeftRider.SelectedIndex != -1){
-                    return true;
-                }
+                new MacMessageBox("You need to select different comports for each connection if you're using external displays.") { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
             }
             else
             {
-                if (cbRigthRider.SelectedIndex != -1){
-                    return true;
-                }
+                new MacMessageBox("Connected!") { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
             }
-
-            if (showMsg)
-            {
-                MacMessageBox MMB = new MacMessageBox("Please select a rider to save the time to.");
-                MMB.StartPosition = FormStartPosition.CenterParent;
-                MMB.ShowDialog();
-            }
-            return false;
         }
 
-        private Boolean isRawTimeEntered(Lane lane, Boolean showMsg)
+        private void cbColors_CheckedChanged(object sender, EventArgs e)
         {
-            if (lane == Lane.Left)
+            if (this.cbColors.Checked)
             {
-                if (tbLeftRaw.Text.Length != 0)
-                {
-                    return true;
-                }
+                this.cbLeftColor.Enabled = true;
+                this.cbRightColor.Enabled = true;
             }
             else
             {
-                if (tbRightRaw.Text.Length != 0)
-                {
-                    return true;
-                }
+                this.cbLeftColor.Enabled = false;
+                this.cbRightColor.Enabled = false;
+                this.cbLeftColor.SelectedIndex = 0;
+                this.cbRightColor.SelectedIndex = 0;
             }
-
-            if (showMsg)
-            {
-                MacMessageBox MMB = new MacMessageBox("There is no raw time to save.");
-                MMB.StartPosition = FormStartPosition.CenterParent;
-                MMB.ShowDialog();
-            }
-            return false;
         }
 
-        private Boolean isReactionTimeEntered(Lane lane, Boolean showMsg)
+        private void cbDisplays_CheckedChanged(object sender, EventArgs e)
         {
-            if (lane == Lane.Left)
+            if (this.cbDisplays.Checked)
             {
-                if (tbLeftReaction.Text.Length != 0)
+                if (MessageBox.Show("If you have Trackmate v6.5 or higher click 'Yes' otherwise click 'No' and the times on the displays will start rolling at the fourth beep.", "Trackmate version", MessageBoxButtons.YesNo) == DialogResult.Yes)
                 {
-                    return true;
-                }
-            }
-            else
-            {
-                if (tbRightReaction.Text.Length != 0)
-                {
-                    return true;
-                }
-            }
-
-            if (showMsg)
-            {
-                MacMessageBox MMB = new MacMessageBox("There is no reaction time to save.");
-                MMB.StartPosition = FormStartPosition.CenterParent;
-                MMB.ShowDialog();
-            }
-            return false;
-        }
-
-        private bool saveDualQualification(Lane lane){
-            return saveDualLaneRace(lane);
-        }
-
-        private _Worksheet getWorkSheet()
-        {
-            _Worksheet WS = null;
-            try
-            {
-                WS = (_Worksheet)theWorkbook.Worksheets.get_Item(cbWorkSheet.SelectedIndex + 1);
-            }
-            catch (Exception ex)
-            {
-                MacMessageBox MMB = new MacMessageBox("Oops! We were not able to read the excelsheet that you previously selected. Did you kill it? Please re-open the spread sheet. " + ex.Message);
-                MMB.StartPosition = FormStartPosition.CenterParent;
-                MMB.ShowDialog();
-            }
-            return WS;
-        }
-
-        private bool saveDualLaneRace(Lane lane){
-            // We would like to find the selected rider and make sure that there is no
-            // time saved. If there are times save already we should either move on to round
-            // 2 and make sure that no data have been saved in that field and ask if
-            // is correct that this is round 2. If there is data saved in round 2 as well then
-            // we ask if this is a rerun and which part we should overwrite.
-            if (!isRiderSelected(lane, false) && !isRawTimeEntered(lane, false) && !isReactionTimeEntered(lane, false))
-            {
-                return false;
-            }
-
-            if (!cbDiscardReactionTimes.Checked)
-            {
-                if (!isReactionTimeEntered(lane, true))
-                {
-                    return false;
-                }
-            }
-            
-            if (!isRiderSelected(lane, true))
-            {
-                return false;
-            }
-            if (!isRawTimeEntered(lane, true))
-            {
-                return false;
-            }
-
-            System.Globalization.CultureInfo oldCI = Thread.CurrentThread.CurrentCulture;
-            Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("en-US");
-            Mac.Excel9.Interop._Worksheet WS = null;
-            WS = getWorkSheet();
-            string strStartRound = "";
-            int nStartValue = 0;
-
-            // retrieve the riders that are in this round
-            Mac.Excel9.Interop.Range range = null;
-
-            // 1 == dual qual 
-            if (m_nRaceType == RaceTypes.Qualification)
-            {
-                range = WS.get_Range("C1", "C99");
-                nStartValue = 1;
-            }
-            else
-            {
-                range = WS.get_Range("B1", "B99");
-                nStartValue = 0;
-            }
-
-            System.Array myvalues = (System.Array)range.Cells.Value2;
-            string[] strArray = ConvertToStringArray(myvalues);
-
-            // loop until you find where the selected round starts and 
-            // then gather the riders within this round.
-            foreach (String cellValue in strArray)
-            {
-                nStartValue++;
-                if (strStartRound == "")
-                {
-                    // 1 == dual qual 
-                    if (m_nRaceType == RaceTypes.Qualification)
-                    {
-                        strStartRound = "C" + nStartValue.ToString();
-                    }
-                    else
-                    {
-                        String strSelRound = cbRound.SelectedItem.ToString();
-                        if (strSelRound == "Final & consi")
-                        {
-                            string strWhatFinal = "";
-                            if (lane == Lane.Left)
-                            {
-                                if (cbLeftRider.SelectedItem.ToString().Trim().Contains(" - (consi)"))
-                                {
-                                    strWhatFinal = "Cons";
-                                }
-                                else
-                                {
-                                    strWhatFinal = "Final";
-                                }
-                            }
-                            else
-                            {
-                                if (cbRigthRider.SelectedItem.ToString().Trim().Contains(" - (consi)"))
-                                {
-                                    strWhatFinal = "Cons";
-                                }
-                                else
-                                {
-                                    strWhatFinal = "Final";
-                                }
-                            }
-
-                            if (cellValue.Contains(strWhatFinal))
-                            {
-                                strStartRound = "B" + nStartValue.ToString();
-                            }
-                        }
-                        else
-                        {
-                            if (cellValue.IndexOf(strSelRound) != -1)
-                            {
-                                strStartRound = "B" + nStartValue.ToString();
-                            }
-                        }
-                    }
-                }else{
-                    // find the selected rider and check if there are times saved already.
-                    string strCellRiderName = "";
-
-                    // 1 == dual qual 
-                    if (m_nRaceType == RaceTypes.Qualification)
-                    {
-                        strCellRiderName = "C" + nStartValue.ToString();
-                    }
-                    else
-                    {
-                        strCellRiderName = "B" + nStartValue.ToString();
-                    }
-                    Mac.Excel9.Interop.Range range0 = WS.get_Range(strCellRiderName, strCellRiderName);
-                    string selected = "";
-                    if (lane == Lane.Left)
-                    {
-                        selected = cbLeftRider.SelectedItem.ToString().Trim(); 
-                    }
-                    else
-                    {
-                        selected = cbRigthRider.SelectedItem.ToString().Trim();
-                    }
-
-                    if (selected.EndsWith(" - (final)"))
-                    {
-                        selected = selected.Substring(0, selected.Length - 10);
-                    }
-                    if (selected.EndsWith(" - (consi)"))
-                    {
-                        selected = selected.Substring(0, selected.Length - 10);
-                    }
-
-                    if (range0.Cells.Value2 != null && range0.Cells.Value2.ToString().Trim() == selected)
-                    {
-                        string strCellFirstTime = "C" + nStartValue.ToString();
-                        string strCellSecondTime = "K" + nStartValue.ToString();
-                        string strCellFirstCones = "D" + nStartValue.ToString();
-                        string strCellSecondCones = "L" + nStartValue.ToString();
-                        string strCellFirstReaction = "E" + nStartValue.ToString();
-                        string strCellSecondReaction = "M" + nStartValue.ToString();
-                        string strCellFirstFalse = "F" + nStartValue.ToString();
-                        string strCellSecondFalse = "N" + nStartValue.ToString();
-
-                        // 1 == dual qual 
-                        if (m_nRaceType == RaceTypes.Qualification)
-                        {
-                            strCellFirstTime = "D" + nStartValue.ToString();
-                            strCellFirstCones = "E" + nStartValue.ToString(); ;
-                            strCellFirstReaction = "F" + nStartValue.ToString();
-                            strCellFirstFalse = "G" + nStartValue.ToString();
-                        }
-
-                        string strRaw = "";
-                        string strReaction = "";
-                        string strCones = "";
-
-                        if (lane == Lane.Left)
-                        {
-                            strRaw = tbLeftRaw.Text;
-                            strReaction = tbLeftReaction.Text;
-                            strCones = cbLeftCones.SelectedItem.ToString();
-                        }
-                        else
-                        {
-                            strRaw = tbRightRaw.Text;
-                            strReaction = tbRightReaction.Text;
-                            strCones = cbRightCones.SelectedItem.ToString();
-                        }
-
-                        // SaveData as First run
-                        Mac.Excel9.Interop.Range range1 = WS.get_Range(strCellFirstTime, strCellFirstTime);
-                        if (range1.Cells.Value2 == null || range1.Cells.Value2.ToString() == "")
-                        {
-                            SaveRunToExcel(WS, strCellFirstTime, strRaw, strCellFirstCones, strCones, strCellFirstReaction, strReaction, strCellFirstFalse, strReaction.Replace("-", ""));
-                            SaveAndReset(lane);
-                            break;
-                        }
-                        else
-                        {
-                            // SaveData as second run
-                            range1 = WS.get_Range(strCellSecondTime, strCellSecondTime);
-                            if (range1.Cells.Value2 == null || range1.Cells.Value2.ToString() == "")
-                            {
-                                SaveRunToExcel(WS, strCellSecondTime, strRaw, strCellSecondCones, strCones, strCellSecondReaction, strReaction, strCellSecondFalse, strReaction.Replace("-", ""));
-                                SaveAndReset(lane);
-                                break;
-                            }
-                            else
-                            {
-                                RoundSelector RS = new RoundSelector(false);
-                                if (RS.ShowDialog() != DialogResult.Cancel)
-                                {
-                                    switch (RS.selectedRound)
-                                    {
-                                        case 1:
-                                            SaveRunToExcel(WS, strCellFirstTime, strRaw, strCellFirstCones, strCones, strCellFirstReaction, strReaction, strCellFirstFalse, strReaction.Replace("-", ""));
-                                            break;
-                                        case 2:
-                                            SaveRunToExcel(WS, strCellSecondTime, strRaw, strCellSecondCones, strCones, strCellSecondReaction, strReaction, strCellSecondFalse, strReaction.Replace("-", ""));
-                                            break;
-                                    }
-                                    SaveAndReset(lane);
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            Thread.CurrentThread.CurrentCulture = oldCI;
-            return true;
-        }
-
-        private void saveSingleLaneRace(){
-            // We would like to find the selected rider and make sure that there is no
-            // time saved. If there are times save already we should either move on to round
-            // 2 and make sure that no data have been saved in that field and ask if
-            // is correct that this is round 2. If there is data saved in round 2 as well then
-            // we ask if this is a rerun and which part we should overwrite.
-            Lane lane = Lane.Left;
-            if (!isRiderSelected(lane, true))
-            {
-                return;
-            }
-            if (!cbDiscardReactionTimes.Checked)
-            {
-                if (!isReactionTimeEntered(lane, true))
-                {
-                    return;
-                }
-            }
-            if (!isRawTimeEntered(lane, true))
-            {
-                return;
-            }
-
-            System.Globalization.CultureInfo oldCI = Thread.CurrentThread.CurrentCulture;
-            Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("en-US");
-
-            string strStartRound = "";
-            int nStartValue = 0;
-
-            Mac.Excel9.Interop._Worksheet WS = null;
-            WS = getWorkSheet();
-
-            // retrieve the riders that are in this round
-            Mac.Excel9.Interop.Range range = null;
-
-            range = WS.get_Range("C1", "C99");
-            nStartValue = 2;
-
-            System.Array myvalues = (System.Array)range.Cells.Value2;
-            string[] strArray = ConvertToStringArray(myvalues);
-
-            // loop until you find where the selected round starts and 
-            // then gather the riders within this round.
-            foreach (String cellValue in strArray)
-            {
-                if (cellValue.ToLower().IndexOf("name") != -1)
-                {
-                    strStartRound = "C" + nStartValue.ToString();
-                }
-
-                nStartValue++;
-
-                if (strStartRound != "")
-                {
-                    // find the selected rider and check if there are times saved already.
-                    string strCellRiderName = "";
-
-                    strCellRiderName = "C" + nStartValue.ToString();
-
-                    Mac.Excel9.Interop.Range range0 = WS.get_Range(strCellRiderName, strCellRiderName);
-                    string selected = cbLeftRider.SelectedItem.ToString().Trim();
-
-                    if (range0.Cells.Value2 != null && range0.Cells.Value2.ToString().Trim() == selected)
-                    {
-                        string strCellFirstReaction = "D" + nStartValue.ToString();
-                        string strCellFirstTime = "E" + nStartValue.ToString();
-                        string strCellFirstCones = "F" + nStartValue.ToString(); ;
-                        string strCellSecondReaction = "J" + nStartValue.ToString();
-                        string strCellSecondTime = "K" + nStartValue.ToString();
-                        string strCellSecondCones = "L" + nStartValue.ToString();
-                        string strCellThirdReaction = "P" + nStartValue.ToString();
-                        string strCellThirdTime = "Q" + nStartValue.ToString();
-                        string strCellThirdCones = "R" + nStartValue.ToString();
-                        string strCellFourthReaction = "V" + nStartValue.ToString();
-                        string strCellFourthTime = "W" + nStartValue.ToString();
-                        string strCellFourthCones = "X" + nStartValue.ToString();
-
-                        string strReaction = "";
-                        string strRaw = "";
-                        string strCones = "";
-
-                        strReaction = tbLeftReaction.Text;
-                        strRaw = tbLeftRaw.Text;
-                        strCones = cbLeftCones.SelectedItem.ToString();
-
-                        // SaveData as First run
-                        Mac.Excel9.Interop.Range range1 = WS.get_Range(strCellFirstTime, strCellFirstTime);
-                        if (range1.Cells.Value2 == null || range1.Cells.Value2.ToString() == "")
-                        {
-                            SaveSmallRunToExcel(WS, strCellFirstTime, strRaw, strCellFirstCones, strCones, strCellFirstReaction, strReaction);
-                            SaveAndReset(lane);
-                            break;
-                        }
-                        else
-                        {
-                            range1 = WS.get_Range(strCellSecondTime, strCellSecondTime);
-                            if (range1.Cells.Value2 == null || range1.Cells.Value2.ToString() == "")
-                            {
-                                SaveSmallRunToExcel(WS, strCellSecondTime, strRaw, strCellSecondCones, strCones, strCellSecondReaction, strReaction);
-                                SaveAndReset(lane);
-                                break;
-                            }
-                            else
-                            {
-                                range1 = WS.get_Range(strCellThirdTime, strCellThirdTime);
-                                if (range1.Cells.Value2 == null || range1.Cells.Value2.ToString() == "")
-                                {
-                                    SaveSmallRunToExcel(WS, strCellThirdTime, strRaw, strCellThirdCones, strCones, strCellThirdReaction, strReaction);
-                                    SaveAndReset(lane);
-                                    break;
-                                }
-                                else
-                                {
-                                    range1 = WS.get_Range(strCellFourthTime, strCellFourthTime);
-                                    if (range1.Cells.Value2 == null || range1.Cells.Value2.ToString() == "")
-                                    {
-                                        SaveSmallRunToExcel(WS, strCellFourthTime, strRaw, strCellFourthCones, strCones, strCellFourthReaction, strReaction);
-                                        SaveAndReset(lane);
-                                        break;
-                                    }
-                                    else
-                                    {
-                                        RoundSelector RS = new RoundSelector(true);
-
-                                        if (RS.ShowDialog() != DialogResult.Cancel)
-                                        {
-                                            switch (RS.selectedRound)
-                                            {
-                                                case 1:
-                                                    SaveSmallRunToExcel(WS, strCellFirstTime, strRaw, strCellFirstCones, strCones, strCellFirstReaction, strReaction);
-                                                    break;
-                                                case 2:
-                                                    SaveSmallRunToExcel(WS, strCellSecondTime, strRaw, strCellSecondCones, strCones, strCellSecondReaction, strReaction);
-                                                    break;
-                                                case 3:
-                                                    SaveSmallRunToExcel(WS, strCellThirdTime, strRaw, strCellThirdCones, strCones, strCellThirdReaction, strReaction);
-                                                   break;
-                                                case 4:
-                                                   SaveSmallRunToExcel(WS, strCellFourthTime, strRaw, strCellFourthCones, strCones, strCellFourthReaction, strReaction);
-                                                    break;
-                                            }
-                                            SaveAndReset(lane);
-                                        }
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            SaveToExcel();
-            Thread.CurrentThread.CurrentCulture = oldCI;
-        }
-
-        private void SaveRunToExcel(Mac.Excel9.Interop._Worksheet WS, String cellRaw, String rawTime, String cellCones, String cones, String cellReaction, String reaction, String cellFalseStart, String falseStart)
-        {
-            ((Mac.Excel9.Interop.Range)WS.Cells.get_Range(cellRaw, cellRaw)).Value2 = rawTime;
-            ((Mac.Excel9.Interop.Range)WS.Cells.get_Range(cellCones, cellCones)).Value2 = cones;
-            if (!(Boolean)((Mac.Excel9.Interop.Range)WS.Cells.get_Range(cellReaction, cellReaction)).HasArray)
-            {
-                if (reaction.IndexOf("-") == -1)
-                {
-                    ((Mac.Excel9.Interop.Range)WS.Cells.get_Range(cellReaction, cellReaction)).Value2 = reaction;
-                    ((Mac.Excel9.Interop.Range)WS.Cells.get_Range(cellFalseStart, cellFalseStart)).Value2 = "";
+                    this.m_bolTrackmateVersion = true;
                 }
                 else
                 {
-                    ((Mac.Excel9.Interop.Range)WS.Cells.get_Range(cellReaction, cellReaction)).Value2 = "";
-                    ((Mac.Excel9.Interop.Range)WS.Cells.get_Range(cellFalseStart, cellFalseStart)).Value2 = falseStart;
+                    this.m_bolTrackmateVersion = false;
                 }
-            }
-        }
-
-        private void SaveSmallRunToExcel(Mac.Excel9.Interop._Worksheet WS, String cellRaw, String rawTime, String cellCones, String cones, String cellReaction, String reaction)
-        {
-            ((Mac.Excel9.Interop.Range)WS.Cells.get_Range(cellReaction, cellReaction)).Value2 = reaction;
-            ((Mac.Excel9.Interop.Range)WS.Cells.get_Range(cellRaw, cellRaw)).Value2 = rawTime;
-            ((Mac.Excel9.Interop.Range)WS.Cells.get_Range(cellCones, cellCones)).Value2 = cones;
-        }
-
-        private void SaveToExcel()
-        {
-            try
-            {
-                theWorkbook.Save();
-            }
-            catch (Exception ex)
-            {
-                MacMessageBox MMB = new MacMessageBox("It seems like the workbook have been opened in readonly mode. Please save this workbook manually and reopen this program with a non-read only version. " + ex.Message);
-                MMB.StartPosition = FormStartPosition.CenterParent;
-                MMB.ShowDialog();
-            }
-        }
-
-        private void SaveAndReset(Lane lane)
-        {
-            String strRider;
-            String strReaction;
-            String strRaw;
-            String strCones;
-            String strLane;
-            if (lane == Lane.Left)
-            {
-                strRider = cbLeftRider.SelectedItem.ToString().Trim();
-                strReaction = tbLeftReaction.Text;
-                strRaw = tbLeftRaw.Text.Replace(".", ",");
-                strCones = cbLeftCones.SelectedItem.ToString();
-                strLane = "R";
+                if (MessageBox.Show("If this race uses individual starts (no reaction time) click yes, otherwise click no", "Use reaction", MessageBoxButtons.YesNo) == DialogResult.Yes)
+                {
+                    this.m_bolDisplayZeroReaction = true;
+                }
+                else
+                {
+                    this.m_bolDisplayZeroReaction = false;
+                }
+                this.label10.Visible = true;
+                this.label11.Visible = true;
+                this.label12.Visible = true;
+                this.cbDisplayPortLeft.Visible = true;
+                this.cbDisplayPortRight.Visible = true;
+                this.bnConnectDisplays.Visible = true;
             }
             else
             {
-                strRider = cbRigthRider.SelectedItem.ToString().Trim();
-                strReaction = tbRightReaction.Text;
-                strRaw = tbRightRaw.Text.Replace(".", ",");
-                strCones = cbRightCones.SelectedItem.ToString();
-                strLane = "W";
+                this.label10.Visible = false;
+                this.label11.Visible = false;
+                this.label12.Visible = false;
+                this.cbDisplayPortLeft.Visible = false;
+                this.cbDisplayPortRight.Visible = false;
+                this.bnConnectDisplays.Visible = false;
             }
+        }
 
+        private void cbLiveReport_CheckedChanged(object sender, EventArgs e)
+        {
+            if (this.cbLiveReport.Checked)
+            {
+                this.label15.Visible = true;
+                this.tbEventId.Visible = true;
+                this.tbEventId.Enabled = true;
+                this.label16.Visible = true;
+                this.tbReporterId.Visible = true;
+                this.tbReporterId.Enabled = true;
+            }
+            else
+            {
+                this.label15.Visible = false;
+                this.tbEventId.Visible = false;
+                this.tbEventId.Enabled = false;
+                this.label16.Visible = false;
+                this.tbReporterId.Visible = false;
+                this.tbReporterId.Enabled = false;
+            }
+        }
+
+        private void cbPreviousData_CheckedChanged(object sender, EventArgs e)
+        {
             if (m_nRaceType == RaceTypes.SingleLane)
             {
-                strLane = "W";
-            }
-
-            if (cbLiveReport.Checked)
-            {
-                if (tbLiveId.Text.Length == 0)
+                if (this.cbPreviousData.Checked)
                 {
-                    MacMessageBox MMB = new MacMessageBox("You need to fill in the Live Reporter Id in order to submit times to the web. Get your own reporter Id, send an email to marcus@ettsexett.com.");
-                    MMB.StartPosition = FormStartPosition.CenterParent;
-                    MMB.ShowDialog();
-                    return;
-                }
-                if (tbLiveEventId.Text.Length == 0)
-                {
-                    MacMessageBox MMB = new MacMessageBox("You need to fill in the EventId in order to submit times to the web. To get the event Id, send an email to marcus@ettsexett.com.");
-                    MMB.StartPosition = FormStartPosition.CenterParent;
-                    MMB.ShowDialog();
-                    return;
-                }
-
-                submitRunToWeb(strRider, strReaction, strRaw, strCones, strLane);
-            }
-            tbPrevData.Text = strRider + " - " + strReaction + ", " + strRaw + " + " + strCones + Environment.NewLine + tbPrevData.Text;
-            if (lane == Lane.Left)
-            {
-                tbLeftReaction.Text = "";
-                tbLeftReaction.Refresh();
-                tbLeftRaw.Text = "";
-                tbLeftRaw.Refresh();
-                cbLeftCones.SelectedIndex = 0;
-                if (m_nRaceType == RaceTypes.SingleLane) // single lane
-                {
-                    if (cbLeftRider.Items.Count > cbLeftRider.SelectedIndex + 1)
-                    {
-                        cbLeftRider.SelectedIndex = cbLeftRider.SelectedIndex + 1;
-                    }
-                    else
-                    {
-                        cbLeftRider.SelectedIndex = -1;
-                    }
+                    this.tbPrevData.Visible = true;
+                    base.Height = 270;
                 }
                 else
                 {
-                    if (cbLeftRider.Items.Count > cbLeftRider.SelectedIndex + 2)
-                    {
-                        cbLeftRider.SelectedIndex = cbLeftRider.SelectedIndex + 2;
-                    }
-                    else
-                    {
-                        cbLeftRider.SelectedIndex = -1;
-                    }
+                    this.tbPrevData.Visible = false;
+                    base.Height = 0x83;
                 }
+            }
+            else if (this.cbPreviousData.Checked)
+            {
+                this.tbPrevData.Visible = true;
+                base.Height = 270;
             }
             else
             {
-                tbRightReaction.Text = "";
-                tbRightReaction.Refresh();
-                tbRightRaw.Text = "";
-                tbRightRaw.Refresh();
-                cbRightCones.SelectedIndex = 0;
-                if (m_nRaceType == RaceTypes.SingleLane) // single lane
-                {
-                    if (cbRigthRider.Items.Count > cbRigthRider.SelectedIndex + 1)
-                    {
-                        cbRigthRider.SelectedIndex = cbRigthRider.SelectedIndex + 1;
-                    }
-                    else
-                    {
-                        cbRigthRider.SelectedIndex = -1;
-                    }
-                }
-                else
-                {
-                    if (cbRigthRider.Items.Count > cbRigthRider.SelectedIndex + 2)
-                    {
-                        cbRigthRider.SelectedIndex = cbRigthRider.SelectedIndex + 2;
-                    }
-                    else
-                    {
-                        cbRigthRider.SelectedIndex = -1;
-                    }
-                }
+                this.tbPrevData.Visible = false;
+                base.Height = 0xa1;
             }
         }
 
         private void cbRound_SelectedIndexChanged(object sender, EventArgs e)
         {
-            if (cbRound.SelectedIndex != -1)
+            if (this.cbRound.SelectedIndex != -1)
             {
-                System.Globalization.CultureInfo oldCI = Thread.CurrentThread.CurrentCulture;
-                Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("en-US");
-                cbLeftRider.Items.Clear();
-                cbRigthRider.Items.Clear();
-                Mac.Excel9.Interop._Worksheet WS = null;
-
-                try{
-                    WS = (Mac.Excel9.Interop._Worksheet)theWorkbook.Worksheets.get_Item(cbWorkSheet.SelectedIndex + 1);
-                }
-                catch (Exception ex)
+                CultureInfo currentCulture = Thread.CurrentThread.CurrentCulture;
+                Thread.CurrentThread.CurrentCulture = new CultureInfo("en-US");
+                this.cbLeftRider.Items.Clear();
+                this.cbRigthRider.Items.Clear();
+                _Worksheet worksheet = null;
+                try
                 {
-                    MacMessageBox MMB = new MacMessageBox("Oops! We were not able to read the excelsheet that you previously selected. Did you kill it? Please re-open the spread sheet. " + ex.Message);
-                    MMB.StartPosition = FormStartPosition.CenterParent;
-                    MMB.ShowDialog();
+                    worksheet = (_Worksheet)this.theWorkbook.Worksheets.get_Item(this.cbWorkSheet.SelectedIndex + 1);
                 }
-
-                Mac.Excel9.Interop.Range range = WS.get_Range("B1", "B99");
-                System.Array myvalues = (System.Array)range.Cells.Value2;
-                string[] strArray = ConvertToStringArray(myvalues);
-
-                string strStartRound = "";
-                int nStartValue = 1;
-                Boolean bolFinal = false;
-                String strSelRound = cbRound.SelectedItem.ToString();
-                String strAddon = "";
-
-                foreach (String cellValue in strArray)
+                catch (Exception exception)
                 {
-                    nStartValue++;
-                    if (strSelRound == "Final & consi")
+                    new MacMessageBox("Oops! We were not able to read the excelsheet that you previously selected. Did you kill it? Please re-open the spread sheet. " + exception.Message) { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+                }
+                Array values = (Array)worksheet.get_Range("B1", "B99").Cells.Value2;
+                string[] strArray = this.ConvertToStringArray(values);
+                string str = "";
+                int num = 1;
+                bool flag2 = false;
+                string str2 = this.cbRound.SelectedItem.ToString();
+                string str3 = "";
+                foreach (string str4 in strArray)
+                {
+                    num++;
+                    if (str2 == "Final & consi")
                     {
-                        if (cellValue.ToLower().Contains("cons"))
+                        if (str4.ToLower().Contains("cons"))
                         {
-                            strStartRound = "B" + nStartValue.ToString();
-                            strAddon = " - (consi)";
+                            str = "B" + num.ToString();
+                            str3 = " - (consi)";
                         }
                     }
-                    else
+                    else if (str4.IndexOf(str2) != -1)
                     {
-                        if (cellValue.IndexOf(strSelRound) != -1)
-                        {
-                            strStartRound = "B" + nStartValue.ToString();
-                        }
+                        str = "B" + num.ToString();
                     }
-
-                    if (strStartRound != "")
+                    if (str != "")
                     {
-                        string strCellRiderName = "B" + nStartValue.ToString();
-                        Mac.Excel9.Interop.Range range0 = WS.get_Range(strCellRiderName, strCellRiderName);
-                        if (range0.Value2 == null)
+                        string str5 = "B" + num.ToString();
+                        Range range2 = worksheet.get_Range(str5, str5);
+                        if (range2.Value2 == null)
                         {
-                            if (strSelRound == "Final & consi" && !bolFinal)
+                            if ((str2 == "Final & consi") && !flag2)
                             {
-                                bolFinal = true;
-                                nStartValue = nStartValue + 3;
-                                strCellRiderName = "B" + nStartValue.ToString();
-                                range0 = WS.get_Range(strCellRiderName, strCellRiderName);
-                                strAddon = " - (final)";
+                                flag2 = true;
+                                str5 = "B" + ((num + 3)).ToString();
+                                range2 = worksheet.get_Range(str5, str5);
+                                str3 = " - (final)";
                             }
                             else
                             {
                                 break;
                             }
                         }
-
-                        string strRiderName = range0.Cells.Value2.ToString();
-                        cbLeftRider.Items.Add(strRiderName + strAddon);
-                        cbRigthRider.Items.Add(strRiderName + strAddon);
+                        string str6 = range2.Cells.Value2.ToString();
+                        this.cbLeftRider.Items.Add(str6 + str3);
+                        this.cbRigthRider.Items.Add(str6 + str3);
                     }
                 }
-                Thread.CurrentThread.CurrentCulture = oldCI;
-                tabControl1.SelectedIndex = 1;
+                Thread.CurrentThread.CurrentCulture = currentCulture;
+                this.tabControl1.SelectedIndex = 1;
             }
         }
 
-        private void bnRefreshList_Click(object sender, EventArgs e)
+        private void cbWorkSheet_SelectedIndexChanged(object sender, EventArgs e)
         {
-            if (m_nRaceType == RaceTypes.SingleLane || m_nRaceType == RaceTypes.Qualification)
+            _Worksheet wS = null;
+            try
             {
-                Mac.Excel9.Interop._Worksheet WS = null;
-                System.Globalization.CultureInfo oldCI = Thread.CurrentThread.CurrentCulture;
-                Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("en-US");
-                WS = (Mac.Excel9.Interop._Worksheet)theWorkbook.Worksheets.get_Item(cbWorkSheet.SelectedIndex + 1);
-                WS.Activate();
-                FillRiderDropDownsSingle(WS);
-                Thread.CurrentThread.CurrentCulture = oldCI;
+                this.bnRefreshList.Visible = true;
+                CultureInfo currentCulture = Thread.CurrentThread.CurrentCulture;
+                Thread.CurrentThread.CurrentCulture = new CultureInfo("en-US");
+                wS = (_Worksheet)this.theWorkbook.Worksheets.get_Item(this.cbWorkSheet.SelectedIndex + 1);
+                wS.Activate();
+                this.objExcel.Visible = true;
+                base.TopMost = true;
+                base.TopMost = false;
+                this.cbRound.Items.Clear();
+                if (wS.Name.ToLower().IndexOf("qual") != -1)
+                {
+                    new MacMessageBox("This race will be treated as qualification in head 2 head format (since the workbook contains 'qual').") { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+                    m_nRaceType = RaceTypes.Qualification;
+                }
+                else if (wS.Name.ToLower().IndexOf("elim") != -1)
+                {
+                    new MacMessageBox("This race will be treated as eliminatin in head 2 head format (since the workbook contains 'elim').") { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+                    m_nRaceType = RaceTypes.Elimination;
+                }
+                else
+                {
+                    new MacMessageBox("This race will be treated as single lane (since the workbook does not contain 'qual' or 'elim').") { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+                    m_nRaceType = RaceTypes.SingleLane;
+                }
+                if ((m_nRaceType == RaceTypes.SingleLane) || (m_nRaceType == RaceTypes.Qualification))
+                {
+                    this.FillRiderDropDownsSingle(wS);
+                }
+                else
+                {
+                    this.cbRound.Enabled = true;
+                    this.bnRefreshList.Visible = false;
+                    Array values = (Array)wS.get_Range("B1", "B99").Cells.Value2;
+                    string[] strArray = this.ConvertToStringArray(values);
+                    foreach (string str in strArray)
+                    {
+                        if (str.ToLower().IndexOf("round") != -1)
+                        {
+                            if (str.ToLower().IndexOf("final") != -1)
+                            {
+                                this.cbRound.Items.Add("Final & consi");
+                            }
+                            else if (str.ToLower().IndexOf("cons") == -1)
+                            {
+                                this.cbRound.Items.Add(str);
+                            }
+                        }
+                    }
+                    if (this.cbRound.Items.Count == 0)
+                    {
+                        new MacMessageBox("No racers was found in the Excel sheet. If this is single lane or qualification remember that \r\nthe name of the workbook must contain 'qual' in order for the program to find the racers.") { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+                    }
+                }
+                this.colorWorkSheet();
+                Thread.CurrentThread.CurrentCulture = currentCulture;
             }
+            catch (Exception exception)
+            {
+                new MacMessageBox("Oops! We were not able to read the excelsheet that you previously selected. Did you kill it? Please re-open the spread sheet. " + exception.Message) { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+            }
+        }
+
+        private void colorWorkSheet()
+        {
+            _Worksheet worksheet = null;
+            worksheet = this.getWorkSheet();
+            Range range = null;
+            if (this.cbColors.Checked)
+            {
+                Color white = Color.White;
+                Color red = Color.Red;
+                if (((string)this.cbLeftColor.SelectedItem) == "White")
+                {
+                    white = Color.White;
+                }
+                if (((string)this.cbLeftColor.SelectedItem) == "Red")
+                {
+                    white = Color.Red;
+                }
+                if (((string)this.cbLeftColor.SelectedItem) == "Green")
+                {
+                    white = Color.LightGreen;
+                }
+                if (((string)this.cbLeftColor.SelectedItem) == "Orange")
+                {
+                    white = Color.Orange;
+                }
+                if (((string)this.cbLeftColor.SelectedItem) == "Blue")
+                {
+                    white = Color.LightBlue;
+                }
+                if (((string)this.cbLeftColor.SelectedItem) == "Yellow")
+                {
+                    white = Color.Yellow;
+                }
+                if (((string)this.cbRightColor.SelectedItem) == "White")
+                {
+                    red = Color.White;
+                }
+                if (((string)this.cbRightColor.SelectedItem) == "Red")
+                {
+                    red = Color.Red;
+                }
+                if (((string)this.cbRightColor.SelectedItem) == "Green")
+                {
+                    red = Color.LightGreen;
+                }
+                if (((string)this.cbRightColor.SelectedItem) == "Orange")
+                {
+                    red = Color.Orange;
+                }
+                if (((string)this.cbRightColor.SelectedItem) == "Blue")
+                {
+                    red = Color.LightBlue;
+                }
+                if (((string)this.cbRightColor.SelectedItem) == "Yellow")
+                {
+                    red = Color.Yellow;
+                }
+                for (int i = 12; i < 0x70; i++)
+                {
+                    if (((string)this.cbWorkSheet.SelectedItem).ToLower().Contains("qual"))
+                    {
+                        range = worksheet.get_Range("D" + i.ToString(), "I" + i.ToString());
+                    }
+                    else
+                    {
+                        range = worksheet.get_Range("C" + i.ToString(), "H" + i.ToString());
+                    }
+                    this.setBGColor(range, i, white, red);
+                    range = worksheet.get_Range("K" + i.ToString(), "P" + i.ToString());
+                    this.setBGColor(range, i + 1, white, red);
+                }
+                worksheet = null;
+            }
+        }
+
+        private string[] ConvertToStringArray(Array values)
+        {
+            string[] strArray = new string[values.Length];
+            for (int i = 1; i <= values.Length; i++)
+            {
+                if (values.GetValue(i, 1) == null)
+                {
+                    strArray[i - 1] = "";
+                }
+                else
+                {
+                    strArray[i - 1] = values.GetValue(i, 1).ToString();
+                }
+            }
+            return strArray;
+        }
+
+
+        private void ExcelMate_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            this.onExit(null, null);
+        }
+
+        private void FillRiderDropDownsSingle(_Worksheet WS)
+        {
+            this.cbRound.Enabled = false;
+            this.cbLeftRider.Items.Clear();
+            this.cbRigthRider.Items.Clear();
+            Array values = (Array)WS.get_Range("C1", "C99").Cells.Value2;
+            string[] strArray = this.ConvertToStringArray(values);
+            string str = "";
+            int num = 2;
+            foreach (string str2 in strArray)
+            {
+                if (str2.ToLower().IndexOf("name") != -1)
+                {
+                    num++;
+                    str = "C" + num.ToString();
+                }
+                else
+                {
+                    num++;
+                }
+                if (str != "")
+                {
+                    string str3 = "C" + num.ToString();
+                    string str4 = "B" + num.ToString();
+                    string str5 = "";
+                    Range range2 = WS.get_Range(str3, str3);
+                    Range range3 = WS.get_Range(str4, str4);
+                    if (range2.Value2 == null)
+                    {
+                        break;
+                    }
+                    if (range3.Value2 != null)
+                    {
+                        str5 = range3.Cells.Value2.ToString() + " ";
+                    }
+                    string item = str5 + range2.Cells.Value2.ToString();
+                    this.cbLeftRider.Items.Add(item);
+                    this.cbRigthRider.Items.Add(item);
+                }
+            }
+            this.tabControl1.SelectedIndex = 1;
+        }
+
+        private int getClassId()
+        {
+            if (this.cbWorkSheet.SelectedItem.ToString().ToLower().Contains("am"))
+            {
+                return 1;
+            }
+            if (this.cbWorkSheet.SelectedItem.ToString().ToLower().Contains("pro"))
+            {
+                return 2;
+            }
+            if (this.cbWorkSheet.SelectedItem.ToString().ToLower().Contains("wo"))
+            {
+                return 3;
+            }
+            if (this.cbWorkSheet.SelectedItem.ToString().ToLower().Contains("jr") || this.cbWorkSheet.SelectedItem.ToString().ToLower().Contains("junior"))
+            {
+                return 4;
+            }
+            if (this.cbWorkSheet.SelectedItem.ToString().ToLower().Contains("mas"))
+            {
+                return 6;
+            }
+            return 5;
+        }
+
+        private Color GetColor(string name)
+        {
+            switch (name)
+            {
+                case "Red":
+                    return Color.Red;
+
+                case "Green":
+                    return Color.LightGreen;
+
+                case "Orange":
+                    return Color.Orange;
+
+                case "Blue":
+                    return Color.LightBlue;
+
+                case "Yellow":
+                    return Color.Yellow;
+            }
+            return Color.White;
         }
 
         private int getRoundId()
         {
-            if (cbRound.SelectedItem == null)
+            if (this.cbRound.SelectedItem != null)
             {
-                return 0;
-            }
-            else
-            {
-                if (cbRound.SelectedItem.ToString().Contains("Final"))
+                if (this.cbRound.SelectedItem.ToString().Contains("Final"))
                 {
                     return 6;
                 }
-                if (cbRound.SelectedItem.ToString().Contains("4"))
+                if (this.cbRound.SelectedItem.ToString().Contains("4"))
                 {
                     return 5;
                 }
-                if (cbRound.SelectedItem.ToString().Contains("8"))
+                if (this.cbRound.SelectedItem.ToString().Contains("8"))
                 {
                     return 4;
                 }
-                if (cbRound.SelectedItem.ToString().Contains("16"))
+                if (this.cbRound.SelectedItem.ToString().Contains("16"))
                 {
                     return 3;
                 }
-                if (cbRound.SelectedItem.ToString().Contains("32"))
+                if (this.cbRound.SelectedItem.ToString().Contains("32"))
                 {
                     return 2;
                 }
-                if (cbRound.SelectedItem.ToString().Contains("64"))
+                if (this.cbRound.SelectedItem.ToString().Contains("64"))
                 {
                     return 1;
                 }
@@ -1076,811 +782,1001 @@ namespace ExcelMate
             return 0;
         }
 
-        private int getClassId()
-        {
-            if (cbWorkSheet.SelectedItem.ToString().ToLower().Contains("am"))
-            {
-                return 1;
-            }
-            if (cbWorkSheet.SelectedItem.ToString().ToLower().Contains("pro"))
-            {
-                return 2;
-            }
-            if (cbWorkSheet.SelectedItem.ToString().ToLower().Contains("wo"))
-            {
-                return 3;
-            }
-            if (cbWorkSheet.SelectedItem.ToString().ToLower().Contains("jr") || cbWorkSheet.SelectedItem.ToString().ToLower().Contains("junior"))
-            {
-                return 4;
-            }
-            if (cbWorkSheet.SelectedItem.ToString().ToLower().Contains("mas"))
-            {
-                return 6;
-            }
-            // open
-            return 5;
-        }
-        
-        private void submitRunToWeb(String name, String start, String rawtime, String cones, String lane)
-        {
-            String isDQ = "0";
-
-            if (rawtime.ToLower().Contains("dq"))
-            {
-                isDQ = "1";
-            }
-            if (rawtime.Length == 0)
-            {
-                rawtime = "0.00";
-            }
-
-
-            String URL = "";
-            try
-            {
-                URL = "http://www.worldcupranking.com/live/admin/reportRun.asp?";
-
-                String strRealName = "";
-                int addRound = 0;
-
-                if (name.EndsWith(" - (final)"))
-                {
-                    strRealName = name.Substring(0, name.Length - 10);
-                    addRound++;
-                }
-                if (name.EndsWith(" - (consi)"))
-                {
-                    strRealName = name.Substring(0, name.Length - 10);
-                }
-
-                URL += "ISSAId=" + tbLiveId.Text;
-                URL += "&eventId=" + tbLiveEventId.Text;
-                URL += "&classId=" + getClassId();
-                URL += "&racer=" + URLEncode(name);
-                URL += "&round=" + (getRoundId()+addRound);
-                URL += "&start=" + start.Replace(",", ".");
-                URL += "&time=" + rawtime.Replace(",", ".");
-                URL += "&cones=" + cones;
-                URL += "&isDQ=" + isDQ;
-                URL += "&lane=" + lane;
-
-                for (int t = 0; t < 5; t++)
-                {
-                    bool go = false;
-
-                    try
-                    {
-                        WebRequest request = WebRequest.Create(URL);
-                        // If required by the server, set the credentials.
-                        request.Credentials = CredentialCache.DefaultCredentials;
-                        // Get the response.
-                        HttpWebResponse response = (HttpWebResponse)request.GetResponse();
-                        response.Close();
-                    }
-                    catch (Exception ex)
-                    {
-                        String err = ex.Message;
-                        go = true;
-                    }
-
-                    if (!go)
-                    {
-                        break;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MacMessageBox MMB = new MacMessageBox("Oops! The live reporting didn't work. Please check the internetconnection. " + ex.Message);
-                MMB.StartPosition = FormStartPosition.CenterParent;
-                MMB.ShowDialog();
-            }
-        }
-
-        private String URLEncode(String text)
-        {
-            char[] textArray = text.ToCharArray();
-            String URLSafe = "";
-
-            foreach (char tecken in textArray)
-            {
-                if (tecken > 128)
-                {
-                    int val = tecken;
-
-                    URLSafe += "%" + val.ToString("X");
-                }
-                else
-                {
-                    URLSafe += tecken;
-                }
-            }
-
-            return URLSafe;
-        }
-
-        #endregion
-
-        #region exit
-        /// <summary>
-        /// Exit the program
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void onExit(object sender, FormClosingEventArgs e)
-        {
-            StopThread();
-            StopDisplayThreadLeft();
-            StopDisplayThreadRight();
-            System.Globalization.CultureInfo oldCI = Thread.CurrentThread.CurrentCulture;
-            Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("en-US");
-            try
-            {
-                if (tbFileName.Text.Length != 0)
-                {
-                    theWorkbook.Save();
-                    theWorkbook.Close(true, tbFileName.Text, false);
-                }
-            }catch(Exception ex){
-                MacMessageBox MMB = new MacMessageBox("Oops! We couldn't close the Excel spread sheet properly. Perhaps you killed it already? " + ex.Message);
-                MMB.StartPosition = FormStartPosition.CenterParent;
-                MMB.ShowDialog();
-            }
-
-            objExcel = null;
-            Thread.CurrentThread.CurrentCulture = oldCI;
-        }
-
-        private void ExcelMate_FormClosing(object sender, FormClosingEventArgs e)
-        {
-            onExit(null, null);
-        }
-
-        #endregion exit        
-
-        #region TrackMateStuff
-
-        private void startThread()
-        {
-            if (readThread == null)
-            {
-                m_EventStopThread.Reset();
-                readThread = new Thread(new ThreadStart(this.RunThread));
-                readThread.Name = "TrackMateReaderThread";
-                readThread.Start();
-                bnConnect.Text = "Disconnect";
-            }
-        }
-
-        private void RunThread()
-        {
-            TrackMateReader TMR = new TrackMateReader(this, m_EventStopThread, m_EventResetTimer);
-            try
-            {
-                TMR.openComPort(cbComPort.Text);
-            }
-            catch (Exception ex)
-            {
-                MacMessageBox MMB = new MacMessageBox("Failed to open the com port for trackmate, please close the program and start over. " + ex.Message);
-                MMB.StartPosition = FormStartPosition.CenterParent;
-                MMB.ShowDialog();
-                return;
-            }
-            MacMessageBox MMB1 = new MacMessageBox("Connected!");
-            MMB1.StartPosition = FormStartPosition.Manual;
-            System.Drawing.Point p = this.Location;
-            p.X = p.X + this.Width / 2 - MMB1.Width/2;
-            p.Y = p.Y + this.Height/ 2 - MMB1.Height/2;
-            MMB1.Location = p;
-            MMB1.ShowDialog();
-
-            TMR.Read();
-        }
-
-        private void StopThread()
-        {
-            if (readThread != null && readThread.IsAlive)  // thread is active
-            {
-                // set event "Stop"
-                m_EventStopThread.Set();
-
-                // wait when thread  will stop or finish
-                while (readThread.IsAlive)
-                {
-                    Thread.Sleep(100);
-                    System.Windows.Forms.Application.DoEvents();
-                }
-                readThread.Join();
-                readThread = null;
-            }
-        }
-
-        // message ==> the actual time, or other message
-        // lane ==> what lane the message refers to. 0 ==> left, 1==> right
-        // type ==> reaction or rawtime.             0 ==> reaction, 1 ==> rawtime
-        private void AddTrackMateMessage(string message, int lane, int type)
-        {
-            string strLane = Convert.ToString(lane + 1);
-
-            // reaction time
-            if (type == 0)
-            {
-                if (!cbDiscardReactionTimes.Checked)
-                {
-                    if (lane == 0 || (m_nRaceType == RaceTypes.SingleLane && cbSingleLanePort.Checked))
-                    {
-                        tbLeftReaction.Text = message;
-
-                        /* This should be used once the reaction time of "0" in single lane is implemented in the trackmate */
-                        if (cbDisplays.Checked && m_bolTrackmateVersion)
-                        {
-                            if (writeThreadLeft == null)  // thread is active
-                            {
-                                StartDisplayThreadLeft();
-                            }
-                        }
-                    }
-                    else
-                    {
-                        tbRightReaction.Text = message;
-                        /* This should be used once the reaction time of "0" in single lane is implemented in the trackmate */
-                        if (cbDisplays.Checked && m_bolTrackmateVersion)
-                        {
-                            if (writeThreadRight == null)  // thread is active
-                            {
-                                StartDisplayThreadRight();
-                            }
-                        }
-                    }
-                }
-            }
-            // rawtime
-            else
-            {
-                if (lane == 0 || (m_nRaceType == RaceTypes.SingleLane && cbSingleLanePort.Checked))
-                {
-                    tbLeftRaw.Text = message;
-                }
-                else
-                {
-                    tbRightRaw.Text = message;
-                }
-            }
-            this.WriteToLogfile(message + " lane: " + lane.ToString());
-        }
-
         private string GetTimeString(string tid)
         {
-            string hour = Convert.ToString(DateTime.Now.Hour);
-            string minute = Convert.ToString(DateTime.Now.Minute);
-            string second = Convert.ToString(DateTime.Now.Second + tid.Substring(0, tid.IndexOf(".")));
-
-            if (hour.Length == 1)
+            string str = Convert.ToString(DateTime.Now.Hour);
+            string str2 = Convert.ToString(DateTime.Now.Minute);
+            string str3 = Convert.ToString(DateTime.Now.Second + tid.Substring(0, tid.IndexOf(".")));
+            if (str.Length == 1)
             {
-                hour = "0" + hour;
+                str = "0" + str;
             }
-            if (minute.Length == 1)
+            if (str2.Length == 1)
             {
-                minute = "0" + minute;
+                str2 = "0" + str2;
             }
-            if (second.Length == 1)
+            if (str3.Length == 1)
             {
-                second = "0" + second;
+                str3 = "0" + str3;
             }
-            return hour + ":" + minute + ":" + second;
+            string[] textArray1 = new string[] { str, ":", str2, ":", str3 };
+            return string.Concat(textArray1);
         }
 
-        private void bnReset_Click(object sender, EventArgs e)
+        private _Worksheet getWorkSheet()
         {
-            DialogResult RS = DialogResult.No;
-            if (tbLeftRaw.Text.Length != 0 || tbRightRaw.Text.Length != 0)
+            _Worksheet worksheet = null;
+            try
             {
-                RS = MessageBox.Show("It seems like you haven't saved the latest data. Would you like to save first?", "Forgot to save?", MessageBoxButtons.YesNo);
+                worksheet = (_Worksheet)this.theWorkbook.Worksheets.get_Item(this.cbWorkSheet.SelectedIndex + 1);
             }
-            if (RS == DialogResult.No)
+            catch (Exception exception)
             {
-                if (readThread != null && readThread.IsAlive)  // thread is active
-                {
-                    // set event "ResetTimer"
-                    m_EventResetTimer.Set();
-                    Thread.Sleep(1000);
-                    m_EventResetTimer.Reset();
+                new MacMessageBox("Oops! We were not able to read the excelsheet that you previously selected. Did you kill it? Please re-open the spread sheet. " + exception.Message) { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+            }
+            return worksheet;
+        }
 
-                    tbLeftRaw.Text = "";
-                    tbRightRaw.Text = "";
-                    tbLeftReaction.Text = "";
-                    tbRightReaction.Text = "";
 
-                    /*
-                     * This should be commented out once we get a reaction of "0" from the trackmate in single lane
-                     * As for now the time starts when the timer is restarted.*/
-                    if (cbDisplays.Checked && !m_bolTrackmateVersion)
-                    {
-                        if (writeThreadLeft == null)  // thread is active
-                        {
-                            StartDisplayThreadLeft();
-                        }
-                        if (writeThreadRight == null)  // thread is active
-                        {
-                            StartDisplayThreadRight();
-                        }
-                    }
-                }
-                else
+        private bool isRawTimeEntered(Lane lane, bool showMsg)
+        {
+            if (lane == Lane.Left)
+            {
+                if (this.tbLeftRaw.Text.Length != 0)
                 {
-                    MacMessageBox MMB = new MacMessageBox("I don't think you got a connection to the Trackmate.");
-                    MMB.StartPosition = FormStartPosition.CenterParent;
-                    MMB.ShowDialog();
+                    return true;
                 }
             }
-        }
-
-        private void bnConnect_Click_1(object sender, EventArgs e)
-        {
-            if (bnConnect.Text == "Connect!")
+            else if (this.tbRightRaw.Text.Length != 0)
             {
-                startThread();
+                return true;
             }
-            else
+            if (showMsg)
             {
-                StopThread();
-                bnConnect.Text = "Connect!";
+                new MacMessageBox("There is no raw time to save.") { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+            }
+            return false;
+        }
+
+        private bool isReactionTimeEntered(Lane lane, bool showMsg)
+        {
+            if (lane == Lane.Left)
+            {
+                if (this.tbLeftReaction.Text.Length != 0)
+                {
+                    return true;
+                }
+            }
+            else if (this.tbRightReaction.Text.Length != 0)
+            {
+                return true;
+            }
+            if (showMsg)
+            {
+                new MacMessageBox("There is no reaction time to save.") { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+            }
+            return false;
+        }
+
+        private bool isRiderSelected(Lane lane, bool showMsg)
+        {
+            if (lane == Lane.Left)
+            {
+                if (this.cbLeftRider.SelectedIndex != -1)
+                {
+                    return true;
+                }
+            }
+            else if (this.cbRigthRider.SelectedIndex != -1)
+            {
+                return true;
+            }
+            if (showMsg)
+            {
+                new MacMessageBox("Please select a rider to save the time to.") { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+            }
+            return false;
+        }
+
+        private void LeftConesChanged(object sender, EventArgs e)
+        {
+            if (this.cbLeftCones.SelectedItem.ToString() == "DQ")
+            {
+                MacMessageBox box = new MacMessageBox("Should this race be a DQ?", MessageBoxButtons.OKCancel)
+                {
+                    StartPosition = FormStartPosition.CenterParent
+                };
+                box.ShowDialog();
+                if (box.DialogResult == DialogResult.OK)
+                {
+                    this.cbLeftCones.SelectedIndex = 0;
+                    this.tbLeftRaw.Text = "DQ";
+                }
             }
         }
 
-        #endregion
-
-        #region SlalomDisplayStuff
-
-        private void StartDisplayThreadLeft()
+        private void onExit(object sender, FormClosingEventArgs e)
         {
-            m_EventStopWriteToDisplayLeft.Reset();
-            writeThreadLeft = new Thread(new ThreadStart(this.RunDisplayThreadLeft));
-            writeThreadLeft.Name = "TrackMateDisplayWriterLeft";
-            writeThreadLeft.Start();
+            this.StopThread();
+            this.StopDisplayThreadLeft();
+            this.StopDisplayThreadRight();
+            CultureInfo currentCulture = Thread.CurrentThread.CurrentCulture;
+            Thread.CurrentThread.CurrentCulture = new CultureInfo("en-US");
+            try
+            {
+                if (this.tbFileName.Text.Length != 0)
+                {
+                    this.theWorkbook.Save();
+                    this.theWorkbook.Close(true, this.tbFileName.Text, false);
+                }
+            }
+            catch (Exception exception)
+            {
+                new MacMessageBox("Oops! We couldn't close the Excel spread sheet properly. Perhaps you killed it already? " + exception.Message) { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+            }
+            this.objExcel = null;
+            Thread.CurrentThread.CurrentCulture = currentCulture;
         }
 
-        private void StartDisplayThreadRight()
+        private void RightConesChanged(object sender, EventArgs e)
         {
-            m_EventStopWriteToDisplayRight.Reset();
-            writeThreadRight = new Thread(new ThreadStart(this.RunDisplayThreadRight));
-            writeThreadRight.Name = "TrackMateDisplayWriterRight";
-            writeThreadRight.Start();
+            if (this.cbRightCones.SelectedItem.ToString() == "DQ")
+            {
+                MacMessageBox box = new MacMessageBox("Should this race be a DQ?", MessageBoxButtons.OKCancel)
+                {
+                    StartPosition = FormStartPosition.CenterParent
+                };
+                box.ShowDialog();
+                if (box.DialogResult == DialogResult.OK)
+                {
+                    this.cbRightCones.SelectedIndex = 0;
+                    this.tbRightRaw.Text = "DQ";
+                }
+            }
         }
 
         private void RunDisplayThreadLeft()
         {
-            DisplayWriter DWL = new DisplayWriter(this, m_EventStopWriteToDisplayLeft);
+            DisplayWriter writer = new DisplayWriter(this, this.m_EventStopWriteToDisplayLeft);
             try
             {
-                DWL.openComPort(cbDisplayPortLeft.Text);
+                writer.openComPort(this.cbDisplayPortLeft.Text);
             }
-            catch (Exception ex)
+            catch (Exception exception)
             {
-                MacMessageBox MMB = new MacMessageBox("Failed to open the com port for the left display, please close the program and start over. " + ex.Message);
-                MMB.StartPosition = FormStartPosition.CenterParent;
-                MMB.ShowDialog();
+                new MacMessageBox("Failed to open the com port for the left display, please close the program and start over. " + exception.Message) { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
                 return;
             }
-            if (m_bolDisplayZeroReaction)
+            if (this.m_bolDisplayZeroReaction)
             {
-                DWL.WriteReactionToDisplay("0.000");
+                writer.WriteReactionToDisplay("0.000");
             }
             else
             {
-                DWL.WriteReactionToDisplay(tbLeftReaction.Text);
+                writer.WriteReactionToDisplay(this.tbLeftReaction.Text);
             }
         }
 
         private void RunDisplayThreadRight()
         {
-            DisplayWriterRight DWR = new DisplayWriterRight(this, m_EventStopWriteToDisplayRight);
+            DisplayWriterRight right = new DisplayWriterRight(this, this.m_EventStopWriteToDisplayRight);
             try
             {
-                DWR.openComPort(cbDisplayPortRight.Text);
+                right.openComPort(this.cbDisplayPortRight.Text);
             }
-            catch (Exception ex)
+            catch (Exception exception)
             {
-                MacMessageBox MMB = new MacMessageBox("Failed to open the com port for the left display, please close the program and start over. " + ex.Message);
-                MMB.StartPosition = FormStartPosition.CenterParent;
-                MMB.ShowDialog();
+                new MacMessageBox("Failed to open the com port for the left display, please close the program and start over. " + exception.Message) { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
                 return;
             }
-            if (m_bolDisplayZeroReaction)
+            if (this.m_bolDisplayZeroReaction)
             {
-                DWR.WriteReactionToDisplay("0.000");
+                right.WriteReactionToDisplay("0.000");
             }
             else
             {
-                DWR.WriteReactionToDisplay(tbRightReaction.Text);
+                right.WriteReactionToDisplay(this.tbRightReaction.Text);
+            }
+        }
+
+        private void RunFinalTimeDisplayThreadLeft()
+        {
+            DisplayWriter writer = new DisplayWriter(this, this.m_EventStopWriteToDisplayLeft);
+            writer.openComPort(this.cbDisplayPortLeft.Text);
+            writer.WriteFinalTimeToDisplay(this.tbLeftRaw.Text);
+        }
+
+        private void RunFinalTimeDisplayThreadRight()
+        {
+            DisplayWriterRight right = new DisplayWriterRight(this, this.m_EventStopWriteToDisplayRight);
+            right.openComPort(this.cbDisplayPortRight.Text);
+            right.WriteFinalTimeToDisplay(this.tbRightRaw.Text);
+        }
+
+        private void RunThread()
+        {
+            TrackMateReader reader = new TrackMateReader(this, this.m_EventStopThread, this.m_EventResetTimer);
+            try
+            {
+                reader.openComPort(this.cbComPort.Text);
+            }
+            catch (Exception exception)
+            {
+                new MacMessageBox("Failed to open the com port for trackmate, please close the program and start over. " + exception.Message) { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+                return;
+            }
+            MacMessageBox box = new MacMessageBox("Connected!")
+            {
+                StartPosition = FormStartPosition.Manual
+            };
+            System.Drawing.Point location = base.Location;
+            location.X = (location.X + (base.Width / 2)) - (box.Width / 2);
+            location.Y = (location.Y + (base.Height / 2)) - (box.Height / 2);
+            box.Location = location;
+            box.ShowDialog();
+            reader.Read();
+        }
+
+        private void SaveAndReset(Lane lane)
+        {
+            string str;
+            string text;
+            string str3;
+            string str4;
+            string selectedItem;
+            if (lane == Lane.Left)
+            {
+                str = this.cbLeftRider.SelectedItem.ToString().Trim();
+                text = this.tbLeftReaction.Text;
+                str3 = this.tbLeftRaw.Text.Replace(".", ",");
+                str4 = this.cbLeftCones.SelectedItem.ToString();
+                selectedItem = (string)this.cbLeftColor.SelectedItem;
+            }
+            else
+            {
+                str = this.cbRigthRider.SelectedItem.ToString().Trim();
+                text = this.tbRightReaction.Text;
+                str3 = this.tbRightRaw.Text.Replace(".", ",");
+                str4 = this.cbRightCones.SelectedItem.ToString();
+                selectedItem = (string)this.cbRightColor.SelectedItem;
+            }
+            if (m_nRaceType == RaceTypes.SingleLane)
+            {
+                selectedItem = "R";
+            }
+            if (this.cbLiveReport.Checked)
+            {
+                if (this.tbEventId.Text.Length == 0)
+                {
+                    new MacMessageBox("You need to fill in the Live Reporter Id in order to submit times to the web. Get your own reporter Id, send an email to marcus@ettsexett.com.") { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+                    return;
+                }
+                if (this.tbReporterId.Text.Length == 0)
+                {
+                    new MacMessageBox("You need to fill in the EventId in order to submit times to the web. To get the event Id, send an email to marcus@ettsexett.com.") { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+                    return;
+                }
+                this.submitRunToWeb(str, text, str3, str4, selectedItem, false);
+            }
+            string[] textArray1 = new string[] { str, " - ", text, ", ", str3, " + ", str4, Environment.NewLine, this.tbPrevData.Text };
+            this.tbPrevData.Text = string.Concat(textArray1);
+            if (lane == Lane.Left)
+            {
+                this.tbLeftReaction.Text = "";
+                this.tbLeftReaction.Refresh();
+                this.tbLeftRaw.Text = "";
+                this.tbLeftRaw.Refresh();
+                this.cbLeftCones.SelectedIndex = 0;
+                if (m_nRaceType == RaceTypes.SingleLane)
+                {
+                    if (this.cbLeftRider.Items.Count > (this.cbLeftRider.SelectedIndex + 1))
+                    {
+                        this.cbLeftRider.SelectedIndex++;
+                    }
+                    else
+                    {
+                        this.cbLeftRider.SelectedIndex = -1;
+                    }
+                }
+                else if (this.cbLeftRider.Items.Count > (this.cbLeftRider.SelectedIndex + 2))
+                {
+                    this.cbLeftRider.SelectedIndex += 2;
+                }
+                else
+                {
+                    this.cbLeftRider.SelectedIndex = -1;
+                }
+            }
+            else
+            {
+                this.tbRightReaction.Text = "";
+                this.tbRightReaction.Refresh();
+                this.tbRightRaw.Text = "";
+                this.tbRightRaw.Refresh();
+                this.cbRightCones.SelectedIndex = 0;
+                if (m_nRaceType == RaceTypes.SingleLane)
+                {
+                    if (this.cbRigthRider.Items.Count > (this.cbRigthRider.SelectedIndex + 1))
+                    {
+                        this.cbRigthRider.SelectedIndex++;
+                    }
+                    else
+                    {
+                        this.cbRigthRider.SelectedIndex = -1;
+                    }
+                }
+                else if (this.cbRigthRider.Items.Count > (this.cbRigthRider.SelectedIndex + 2))
+                {
+                    this.cbRigthRider.SelectedIndex += 2;
+                }
+                else
+                {
+                    this.cbRigthRider.SelectedIndex = -1;
+                }
+            }
+        }
+
+        private bool saveDualLaneRace(Lane lane)
+        {
+            if ((!this.isRiderSelected(lane, false) && !this.isRawTimeEntered(lane, false)) && !this.isReactionTimeEntered(lane, false))
+            {
+                return false;
+            }
+            if (!this.cbDiscardReactionTimes.Checked && !this.isReactionTimeEntered(lane, true))
+            {
+                return false;
+            }
+            if (!this.isRiderSelected(lane, true))
+            {
+                return false;
+            }
+            if (!this.isRawTimeEntered(lane, true))
+            {
+                return false;
+            }
+            CultureInfo currentCulture = Thread.CurrentThread.CurrentCulture;
+            Thread.CurrentThread.CurrentCulture = new CultureInfo("en-US");
+            _Worksheet wS = null;
+            wS = this.getWorkSheet();
+            string str = "";
+            int num = 0;
+            Range range = null;
+            if (m_nRaceType == RaceTypes.Qualification)
+            {
+                range = wS.get_Range("C1", "C99");
+                num = 1;
+            }
+            else
+            {
+                range = wS.get_Range("B1", "B99");
+                num = 0;
+            }
+            Array values = (Array)range.Cells.Value2;
+            string[] strArray = this.ConvertToStringArray(values);
+            foreach (string str2 in strArray)
+            {
+                num++;
+                if (str == "")
+                {
+                    if (m_nRaceType == RaceTypes.Qualification)
+                    {
+                        str = "C" + num.ToString();
+                    }
+                    else
+                    {
+                        string str3 = this.cbRound.SelectedItem.ToString();
+                        if (str3 == "Final & consi")
+                        {
+                            string str4 = "";
+                            if (lane == Lane.Left)
+                            {
+                                if (this.cbLeftRider.SelectedItem.ToString().Trim().Contains(" - (consi)"))
+                                {
+                                    str4 = "Cons";
+                                }
+                                else
+                                {
+                                    str4 = "Final";
+                                }
+                            }
+                            else if (this.cbRigthRider.SelectedItem.ToString().Trim().Contains(" - (consi)"))
+                            {
+                                str4 = "Cons";
+                            }
+                            else
+                            {
+                                str4 = "Final";
+                            }
+                            if (str2.Contains(str4))
+                            {
+                                str = "B" + num.ToString();
+                            }
+                        }
+                        else if (str2.IndexOf(str3) != -1)
+                        {
+                            str = "B" + num.ToString();
+                        }
+                    }
+                    continue;
+                }
+                string str5 = "";
+                if (m_nRaceType == RaceTypes.Qualification)
+                {
+                    str5 = "C" + num.ToString();
+                }
+                else
+                {
+                    str5 = "B" + num.ToString();
+                }
+                Range range2 = wS.get_Range(str5, str5);
+                string str6 = "";
+                if (lane == Lane.Left)
+                {
+                    str6 = this.cbLeftRider.SelectedItem.ToString().Trim();
+                }
+                else
+                {
+                    str6 = this.cbRigthRider.SelectedItem.ToString().Trim();
+                }
+                if (str6.EndsWith(" - (final)"))
+                {
+                    str6 = str6.Substring(0, str6.Length - 10);
+                }
+                if (str6.EndsWith(" - (consi)"))
+                {
+                    str6 = str6.Substring(0, str6.Length - 10);
+                }
+                if ((range2.Cells.Value2 != null) && ((range2.Cells.Value2.ToString().Trim() == str6) || (range2.Cells.Value2.ToString().Trim() == str6.Substring(str6.IndexOf(" ") + 1))))
+                {
+                    string str7 = "C" + num.ToString();
+                    string str8 = "K" + num.ToString();
+                    string cellCones = "D" + num.ToString();
+                    string str10 = "L" + num.ToString();
+                    string cellReaction = "E" + num.ToString();
+                    string str12 = "M" + num.ToString();
+                    string cellFalseStart = "F" + num.ToString();
+                    string str14 = "N" + num.ToString();
+                    if (m_nRaceType == RaceTypes.Qualification)
+                    {
+                        str7 = "D" + num.ToString();
+                        cellCones = "E" + num.ToString();
+                        cellReaction = "F" + num.ToString();
+                        cellFalseStart = "G" + num.ToString();
+                    }
+                    string rawTime = "";
+                    string reaction = "";
+                    string cones = "";
+                    if (lane == Lane.Left)
+                    {
+                        rawTime = this.tbLeftRaw.Text;
+                        reaction = this.tbLeftReaction.Text;
+                        cones = this.cbLeftCones.SelectedItem.ToString();
+                    }
+                    else
+                    {
+                        rawTime = this.tbRightRaw.Text;
+                        reaction = this.tbRightReaction.Text;
+                        cones = this.cbRightCones.SelectedItem.ToString();
+                    }
+                    Range range3 = wS.get_Range(str7, str7);
+                    if ((range3.Cells.Value2 == null) || (range3.Cells.Value2.ToString() == ""))
+                    {
+                        this.SaveRunToExcel(wS, str7, rawTime, cellCones, cones, cellReaction, reaction, cellFalseStart, reaction.Replace("-", ""));
+                        this.SaveAndReset(lane);
+                        break;
+                    }
+                    range3 = wS.get_Range(str8, str8);
+                    if ((range3.Cells.Value2 == null) || (range3.Cells.Value2.ToString() == ""))
+                    {
+                        this.SaveRunToExcel(wS, str8, rawTime, str10, cones, str12, reaction, str14, reaction.Replace("-", ""));
+                        this.SaveAndReset(lane);
+                        break;
+                    }
+                    RoundSelector selector = new RoundSelector(false);
+                    if (selector.ShowDialog() != DialogResult.Cancel)
+                    {
+                        switch (selector.selectedRound)
+                        {
+                            case 1:
+                                this.SaveRunToExcel(wS, str7, rawTime, cellCones, cones, cellReaction, reaction, cellFalseStart, reaction.Replace("-", ""));
+                                break;
+
+                            case 2:
+                                this.SaveRunToExcel(wS, str8, rawTime, str10, cones, str12, reaction, str14, reaction.Replace("-", ""));
+                                break;
+                        }
+                        this.SaveAndReset(lane);
+                    }
+                    break;
+                }
+            }
+            Thread.CurrentThread.CurrentCulture = currentCulture;
+            return true;
+        }
+
+        private bool saveDualQualification(Lane lane)
+        {
+            return this.saveDualLaneRace(lane);
+        }
+
+        private void SaveRunToExcel(_Worksheet WS, string cellRaw, string rawTime, string cellCones, string cones, string cellReaction, string reaction, string cellFalseStart, string falseStart)
+        {
+            WS.Cells.get_Range(cellRaw, cellRaw).Value2 = rawTime;
+            WS.Cells.get_Range(cellCones, cellCones).Value2 = cones;
+            if (!((bool)WS.Cells.get_Range(cellReaction, cellReaction).HasArray))
+            {
+                if (reaction.IndexOf("-") == -1)
+                {
+                    WS.Cells.get_Range(cellReaction, cellReaction).Value2 = reaction;
+                    WS.Cells.get_Range(cellFalseStart, cellFalseStart).Value2 = "";
+                }
+                else
+                {
+                    WS.Cells.get_Range(cellReaction, cellReaction).Value2 = "";
+                    WS.Cells.get_Range(cellFalseStart, cellFalseStart).Value2 = falseStart;
+                }
+            }
+        }
+
+        private void saveSingleLaneRace()
+        {
+            Lane left = Lane.Left;
+            if ((this.isRiderSelected(left, true) && (this.cbDiscardReactionTimes.Checked || this.isReactionTimeEntered(left, true))) && this.isRawTimeEntered(left, true))
+            {
+                CultureInfo currentCulture = Thread.CurrentThread.CurrentCulture;
+                Thread.CurrentThread.CurrentCulture = new CultureInfo("en-US");
+                string str = "";
+                int num = 0;
+                _Worksheet wS = null;
+                wS = this.getWorkSheet();
+                Range range = null;
+                range = wS.get_Range("C1", "C99");
+                num = 2;
+                Array values = (Array)range.Cells.Value2;
+                string[] strArray = this.ConvertToStringArray(values);
+                foreach (string str2 in strArray)
+                {
+                    if (str2.ToLower().IndexOf("name") != -1)
+                    {
+                        str = "C" + num.ToString();
+                    }
+                    num++;
+                    if (str != "")
+                    {
+                        string str3 = "";
+                        str3 = "C" + num.ToString();
+                        Range range2 = wS.get_Range(str3, str3);
+                        string str4 = this.cbLeftRider.SelectedItem.ToString().Trim();
+                        if ((range2.Cells.Value2 != null) && (range2.Cells.Value2.ToString().Trim() == str4))
+                        {
+                            string cellReaction = "D" + num.ToString();
+                            string str6 = "E" + num.ToString();
+                            string cellCones = "F" + num.ToString();
+                            string str8 = "J" + num.ToString();
+                            string str9 = "K" + num.ToString();
+                            string str10 = "L" + num.ToString();
+                            string str11 = "P" + num.ToString();
+                            string str12 = "Q" + num.ToString();
+                            string str13 = "R" + num.ToString();
+                            string str14 = "V" + num.ToString();
+                            string str15 = "W" + num.ToString();
+                            string str16 = "X" + num.ToString();
+                            string reaction = "";
+                            string rawTime = "";
+                            string cones = "";
+                            reaction = this.tbLeftReaction.Text;
+                            rawTime = this.tbLeftRaw.Text;
+                            cones = this.cbLeftCones.SelectedItem.ToString();
+                            Range range3 = wS.get_Range(str6, str6);
+                            if ((range3.Cells.Value2 == null) || (range3.Cells.Value2.ToString() == ""))
+                            {
+                                this.SaveSmallRunToExcel(wS, str6, rawTime, cellCones, cones, cellReaction, reaction);
+                                this.SaveAndReset(left);
+                                break;
+                            }
+                            range3 = wS.get_Range(str9, str9);
+                            if ((range3.Cells.Value2 == null) || (range3.Cells.Value2.ToString() == ""))
+                            {
+                                this.SaveSmallRunToExcel(wS, str9, rawTime, str10, cones, str8, reaction);
+                                this.SaveAndReset(left);
+                                break;
+                            }
+                            range3 = wS.get_Range(str12, str12);
+                            if ((range3.Cells.Value2 == null) || (range3.Cells.Value2.ToString() == ""))
+                            {
+                                this.SaveSmallRunToExcel(wS, str12, rawTime, str13, cones, str11, reaction);
+                                this.SaveAndReset(left);
+                                break;
+                            }
+                            range3 = wS.get_Range(str15, str15);
+                            if ((range3.Cells.Value2 == null) || (range3.Cells.Value2.ToString() == ""))
+                            {
+                                this.SaveSmallRunToExcel(wS, str15, rawTime, str16, cones, str14, reaction);
+                                this.SaveAndReset(left);
+                                break;
+                            }
+                            RoundSelector selector = new RoundSelector(true);
+                            if (selector.ShowDialog() != DialogResult.Cancel)
+                            {
+                                switch (selector.selectedRound)
+                                {
+                                    case 1:
+                                        this.SaveSmallRunToExcel(wS, str6, rawTime, cellCones, cones, cellReaction, reaction);
+                                        break;
+
+                                    case 2:
+                                        this.SaveSmallRunToExcel(wS, str9, rawTime, str10, cones, str8, reaction);
+                                        break;
+
+                                    case 3:
+                                        this.SaveSmallRunToExcel(wS, str12, rawTime, str13, cones, str11, reaction);
+                                        break;
+
+                                    case 4:
+                                        this.SaveSmallRunToExcel(wS, str15, rawTime, str16, cones, str14, reaction);
+                                        break;
+                                }
+                                this.SaveAndReset(left);
+                            }
+                            break;
+                        }
+                    }
+                }
+                this.SaveToExcel();
+                Thread.CurrentThread.CurrentCulture = currentCulture;
+            }
+        }
+
+        private void SaveSmallRunToExcel(_Worksheet WS, string cellRaw, string rawTime, string cellCones, string cones, string cellReaction, string reaction)
+        {
+            WS.Cells.get_Range(cellReaction, cellReaction).Value2 = reaction;
+            WS.Cells.get_Range(cellRaw, cellRaw).Value2 = rawTime;
+            WS.Cells.get_Range(cellCones, cellCones).Value2 = cones;
+        }
+
+        private void SaveToExcel()
+        {
+            try
+            {
+                this.theWorkbook.Save();
+            }
+            catch (Exception exception)
+            {
+                new MacMessageBox("It seems like the workbook have been opened in readonly mode. Please save this workbook manually and reopen this program with a non-read only version. " + exception.Message) { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+            }
+        }
+
+        private void setBGColor(Range range, int start, Color leftColor, Color rightColor)
+        {
+            int num = start;
+            if ((num % 2) == 0)
+            {
+                range.Interior.Color = ColorTranslator.ToOle(leftColor);
+            }
+            else
+            {
+                range.Interior.Color = ColorTranslator.ToOle(rightColor);
+            }
+        }
+
+        private void ShowFinalTimeOnDisplayLeft()
+        {
+            this.ShowFinalTimeOnDisplayLeft(null, null);
+        }
+
+        private void ShowFinalTimeOnDisplayLeft(object sender, EventArgs e)
+        {
+            if ((this.cbDisplays.Checked && (this.writeThreadLeft != null)) && this.writeThreadLeft.IsAlive)
+            {
+                this.StopDisplayThreadLeft();
+                this.StartFinalTimeDisplayThreadLeft();
+                this.StopDisplayThreadLeft();
+            }
+        }
+
+        private void ShowFinalTimeOnDisplayRight()
+        {
+            this.ShowFinalTimeOnDisplayRight(null, null);
+        }
+
+        private void ShowFinalTimeOnDisplayRight(object sender, EventArgs e)
+        {
+            if ((this.cbDisplays.Checked && (this.writeThreadRight != null)) && this.writeThreadRight.IsAlive)
+            {
+                this.StopDisplayThreadRight();
+                this.StartFinalTimeDisplayThreadRight();
+                this.StopDisplayThreadRight();
+            }
+        }
+
+        private void StartDisplayThreadLeft()
+        {
+            this.m_EventStopWriteToDisplayLeft.Reset();
+            this.writeThreadLeft = new Thread(new ThreadStart(this.RunDisplayThreadLeft));
+            this.writeThreadLeft.Name = "TrackMateDisplayWriterLeft";
+            this.writeThreadLeft.Start();
+        }
+
+        private void StartDisplayThreadRight()
+        {
+            this.m_EventStopWriteToDisplayRight.Reset();
+            this.writeThreadRight = new Thread(new ThreadStart(this.RunDisplayThreadRight));
+            this.writeThreadRight.Name = "TrackMateDisplayWriterRight";
+            this.writeThreadRight.Start();
+        }
+
+        private void StartFinalTimeDisplayThreadLeft()
+        {
+            this.m_EventStopWriteToDisplayLeft.Reset();
+            this.writeThreadLeft = new Thread(new ThreadStart(this.RunFinalTimeDisplayThreadLeft));
+            this.writeThreadLeft.Name = "TrackMateDisplayWriterLeft";
+            this.writeThreadLeft.Start();
+        }
+
+        private void StartFinalTimeDisplayThreadRight()
+        {
+            this.m_EventStopWriteToDisplayRight.Reset();
+            this.writeThreadRight = new Thread(new ThreadStart(this.RunFinalTimeDisplayThreadRight));
+            this.writeThreadRight.Name = "TrackMateDisplayWriterRight";
+            this.writeThreadRight.Start();
+        }
+
+        private void startThread()
+        {
+            if (this.readThread == null)
+            {
+                this.m_EventStopThread.Reset();
+                this.readThread = new Thread(new ThreadStart(this.RunThread));
+                this.readThread.Name = "TrackMateReaderThread";
+                this.readThread.Start();
+                this.bnConnect.Text = "Disconnect";
             }
         }
 
         private void StopDisplayThreadLeft()
         {
-            if (writeThreadLeft != null && writeThreadLeft.IsAlive)  // thread is active
+            if ((this.writeThreadLeft != null) && this.writeThreadLeft.IsAlive)
             {
                 try
                 {
-                    // set event "Stop"
-                    m_EventStopWriteToDisplayLeft.Set();
-
-                    // wait when thread  will stop or finish
-                    while (writeThreadLeft.IsAlive)
+                    this.m_EventStopWriteToDisplayLeft.Set();
+                    while (this.writeThreadLeft.IsAlive)
                     {
                         Thread.Sleep(100);
                         System.Windows.Forms.Application.DoEvents();
                     }
-                    writeThreadLeft.Join();
-                    writeThreadLeft = null;
+                    this.writeThreadLeft.Join();
+                    this.writeThreadLeft = null;
                 }
-                catch (Exception ex)
+                catch (Exception exception)
                 {
-                    String err = ex.Message;
+                    string message = exception.Message;
                 }
             }
         }
 
         private void StopDisplayThreadRight()
         {
-            if (writeThreadRight != null && writeThreadRight.IsAlive)  // thread is active
+            if ((this.writeThreadRight != null) && this.writeThreadRight.IsAlive)
             {
                 try
                 {
-                    // set event "Stop"
-                    m_EventStopWriteToDisplayRight.Set();
-
-                    // wait when thread  will stop or finish
-                    while (writeThreadRight.IsAlive)
+                    this.m_EventStopWriteToDisplayRight.Set();
+                    while (this.writeThreadRight.IsAlive)
                     {
                         Thread.Sleep(100);
                         System.Windows.Forms.Application.DoEvents();
                     }
-                    writeThreadRight.Join();
-                    writeThreadRight = null;
+                    this.writeThreadRight.Join();
+                    this.writeThreadRight = null;
                 }
-                catch (Exception ex)
+                catch (Exception exception)
                 {
-                    String err = ex.Message;
+                    string message = exception.Message;
                 }
             }
         }
 
-        private void StartFinalTimeDisplayThreadLeft()
+        private void StopThread()
         {
-            m_EventStopWriteToDisplayLeft.Reset();
-            writeThreadLeft = new Thread(new ThreadStart(this.RunFinalTimeDisplayThreadLeft));
-            writeThreadLeft.Name = "TrackMateDisplayWriterLeft";
-            writeThreadLeft.Start();
-        }
-
-        private void StartFinalTimeDisplayThreadRight()
-        {
-            m_EventStopWriteToDisplayRight.Reset();
-            writeThreadRight = new Thread(new ThreadStart(this.RunFinalTimeDisplayThreadRight));
-            writeThreadRight.Name = "TrackMateDisplayWriterRight";
-            writeThreadRight.Start();
-        }
-
-        private void RunFinalTimeDisplayThreadLeft()
-        {
-            DisplayWriter DWL = new DisplayWriter(this, m_EventStopWriteToDisplayLeft);
-            DWL.openComPort(cbDisplayPortLeft.Text);
-            //DWL.openComPort("COM2");
-            DWL.WriteFinalTimeToDisplay(tbLeftRaw.Text);
-        }
-
-        private void RunFinalTimeDisplayThreadRight()
-        {
-            DisplayWriterRight DWR = new DisplayWriterRight(this, m_EventStopWriteToDisplayRight);
-            DWR.openComPort(cbDisplayPortRight.Text);
-            //DWR.openComPort("COM2");
-            DWR.WriteFinalTimeToDisplay(tbRightRaw.Text);
-        }
-
-        private void ShowFinalTimeOnDisplayLeft(object sender, EventArgs e)
-        {
-            if (cbDisplays.Checked && writeThreadLeft != null && writeThreadLeft.IsAlive)  // thread is active
+            if ((this.readThread != null) && this.readThread.IsAlive)
             {
-                StopDisplayThreadLeft();
-                StartFinalTimeDisplayThreadLeft();
-                StopDisplayThreadLeft();
-            }
-        }
-
-        private void ShowFinalTimeOnDisplayRight(object sender, EventArgs e)
-        {
-            if (cbDisplays.Checked && writeThreadRight != null && writeThreadRight.IsAlive)  // thread is active
-            {
-                StopDisplayThreadRight();
-                StartFinalTimeDisplayThreadRight();
-                StopDisplayThreadRight();
-            }
-        }
-
-        private void bnTest_Click(object sender, EventArgs e)
-        {
-            if (tabControl1.SelectedIndex != 0 && cbDisplays.Checked && (cbComPort.Text == cbDisplayPortLeft.Text || cbComPort.Text == cbDisplayPortRight.Text || cbDisplayPortLeft.Text == cbDisplayPortRight.Text))
-            {
-                MacMessageBox MMB = new MacMessageBox("You need to select different comports for each connection if you're using external displays.");
-                MMB.StartPosition = FormStartPosition.CenterParent;
-                MMB.ShowDialog();
-            }
-            else
-            {
-                MacMessageBox MMB = new MacMessageBox("Connected!");
-                MMB.StartPosition = FormStartPosition.CenterParent;
-                MMB.ShowDialog();
-            }
-        }
-
-        private void cbDisplays_CheckedChanged(object sender, EventArgs e)
-        {
-            if (cbDisplays.Checked)
-            {
-                if (MessageBox.Show("If you have Trackmate v6.5 or higher click 'Yes' otherwise click 'No' and the times on the displays will start rolling at the fourth beep.", "Trackmate version", MessageBoxButtons.YesNo) == DialogResult.Yes)
+                this.m_EventStopThread.Set();
+                while (this.readThread.IsAlive)
                 {
-                    m_bolTrackmateVersion = true;
+                    Thread.Sleep(100);
+                    System.Windows.Forms.Application.DoEvents();
                 }
-                else
-                {
-                    m_bolTrackmateVersion = false;
-                }
-                if (MessageBox.Show("If this race uses individual starts (no reaction time) click yes, otherwise click no", "Use reaction", MessageBoxButtons.YesNo) == DialogResult.Yes)
-                {
-                    m_bolDisplayZeroReaction = true;
-                }
-                else
-                {
-                    m_bolDisplayZeroReaction = false;
-                }
-                label10.Visible = true;
-                label11.Visible = true;
-                label12.Visible = true;
-                cbDisplayPortLeft.Visible = true;
-                cbDisplayPortRight.Visible = true;
-                bnConnectDisplays.Visible = true;
+                this.readThread.Join();
+                this.readThread = null;
             }
-            else
+        }
+
+        private void submitRunToWeb(string name, string start, string rawtime, string cones, string lane, bool countDown = false)
+        {
+            if (this.m_bolSendURL)
             {
-                label10.Visible = false;
-                label11.Visible = false;
-                label12.Visible = false;
-                cbDisplayPortLeft.Visible = false;
-                cbDisplayPortRight.Visible = false;
-                bnConnectDisplays.Visible = false;
+                string str = "0";
+                if (rawtime.ToLower().Contains("dq"))
+                {
+                    str = "1";
+                }
+                if (rawtime.Length == 0)
+                {
+                    rawtime = "0.00";
+                }
+                string text = "";
+                try
+                {
+                    text = "http://slalomskateboarder.com/slalomranking/mvc.php?action=event.details&subaction=race_log&";
+                    string str3 = "";
+                    int num = 0;
+                    if (name.EndsWith(" - (final)"))
+                    {
+                        str3 = name.Substring(0, name.Length - 10);
+                        num++;
+                    }
+                    if (name.EndsWith(" - (consi)"))
+                    {
+                        str3 = name.Substring(0, name.Length - 10);
+                    }
+                    text = (text + "reporterid=" + this.tbReporterId.Text) + "&eventId=" + this.tbEventId.Text;
+                    if (countDown)
+                    {
+                        text = text + "&callid=start_countdown";
+                    }
+                    else
+                    {
+                        text = ((((((text + "&racer=" + this.URLEncode(name)) + "&round=" + (this.getRoundId() + num)) + "&start=" + start.Replace(",", ".")) + "&time=" + rawtime.Replace(",", ".")) + "&cones=" + cones) + "&isDQ=" + str) + "&lane=" + lane;
+                    }
+                    if (MessageBox.Show(text, "URL", MessageBoxButtons.OKCancel) != DialogResult.Cancel)
+                    {
+                        for (int i = 0; i < 5; i++)
+                        {
+                            bool flag8 = false;
+                            try
+                            {
+                                WebRequest request = WebRequest.Create(text);
+                                request.Credentials = CredentialCache.DefaultCredentials;
+                                ((HttpWebResponse)request.GetResponse()).Close();
+                            }
+                            catch (Exception exception)
+                            {
+                                string message = exception.Message;
+                                flag8 = true;
+                            }
+                            if (!flag8)
+                            {
+                                return;
+                            }
+                        }
+                    }
+                }
+                catch (Exception exception2)
+                {
+                    new MacMessageBox("Oops! The live reporting didn't work. Please check the internetconnection. " + exception2.Message) { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+                }
             }
         }
-
-
-        private void ShowFinalTimeOnDisplayLeft()
-        {
-            ShowFinalTimeOnDisplayLeft(null, null);
-        }
-
-        private void ShowFinalTimeOnDisplayRight()
-        {
-            ShowFinalTimeOnDisplayRight(null, null);
-        }
-
-        #endregion
 
         private void tabControl1_SelectedIndexChanged(object sender, EventArgs e)
         {
             this.cbPreviousData.Parent = this.tabRace;
             this.bnRefreshList.Parent = this.tabRace;
-            if (cbLayOut.Checked) // old layout
+            if (this.cbLayOut.Checked)
             {
-                    System.Drawing.Point pt = cbLeftRider.Location;
-                    pt.X = 46;
-                    pt.Y = 14;
-                    cbLeftRider.Location = pt;
-                    pt.X = 408;
-                    pt.Y = 14;
-                    tbLeftReaction.Location = pt;
-                    pt.X = 489;
-                    pt.Y = 14;
-                    tbLeftRaw.Location = pt;
-                    pt.X = 583;
-                    pt.Y = 13;
-                    cbLeftCones.Location = pt;
-                    pt.X = 658;
-                    pt.Y = 13;
-                    bnSaveLeft.Location = pt;
-
-                    pt.X = 46;
-                    pt.Y = 58;
-                    cbRigthRider.Location = pt;
-                    pt.X = 408;
-                    pt.Y = 58;
-                    tbRightReaction.Location = pt;
-                    pt.X = 489;
-                    pt.Y = 58;
-                    tbRightRaw.Location = pt;
-                    pt.X = 583;
-                    pt.Y = 58;
-                    cbRightCones.Location = pt;
-                    pt.X = 658;
-                    pt.Y = 58;
-                    bnSaveRight.Location = pt;
-
-                    pt.X = 770;
-                    pt.Y = 13;
-                    bnReset.Location = pt;
-
-                    pt.X = 770;
-                    pt.Y = 51;
-                    bnRefreshList.Location = pt;
-
-                    pt.X = 407;
-                    pt.Y = 1;
-                    label7.Location = pt;
-                    pt.X = 487;
-                    pt.Y = 1;
-                    label8.Location = pt;
-                    pt.X = 578;
-                    pt.Y = 0;
-                    label9.Location = pt;
-
-                    pt.X = 407;
-                    pt.Y = 45;
-                    label14.Location = pt;
-                    pt.X = 487;
-                    pt.Y = 45;
-                    label13.Location = pt;
-                    pt.X = 578;
-                    pt.Y = 45;
-                    label6.Location = pt;
-
-                    label4.Visible = true;
-                    label3.Visible = true;
-                    label14.Visible = false;
-                    label13.Visible = false;
-                    label6.Visible = false;
-
-                    if (m_nRaceType == RaceTypes.SingleLane)
-                    {
-                        label4.Visible = false;
-                        label14.Visible = false;
-                        label13.Visible = false;
-                        label6.Visible = false;
-
-                        cbRigthRider.Visible = false;
-                        tbRightReaction.Visible = false;
-                        tbRightRaw.Visible = false;
-                        cbRightCones.Visible = false;
-
-                        bnSaveRight.Visible = false;
-
-                        label3.Text = "Rider";
-
-                        pt = cbPreviousData.Location;
-                        pt.X = 660;
-                        pt.Y = 54;
-                        cbPreviousData.Location = pt;
-
-                        Size sz = tbPrevData.Size;
-                        sz.Height = 155;
-                        tbPrevData.Size = sz;
-                        pt.X = 44;
-                        pt.Y = 52;
-                        tbPrevData.Location = pt;
-                    }
-                    else
-                    {
-                        label4.Visible = true;
-                        label14.Visible = true;
-                        label13.Visible = true;
-                        label6.Visible = true;
-
-                        cbRigthRider.Visible = true;
-                        tbRightReaction.Visible = true;
-                        tbRightRaw.Visible = true;
-                        cbRightCones.Visible = true;
-                        label3.Text = "Left";
-
-                        pt = cbPreviousData.Location;
-                        pt.X = 772;
-                        pt.Y = 75;
-                        cbPreviousData.Location = pt;
-
-                        Size sz = tbPrevData.Size;
-                        sz.Height = 115;
-                        tbPrevData.Size = sz;
-                        pt.X = 44;
-                        pt.Y = 92;
-                        tbPrevData.Location = pt;
-                    }
-
-            }
-            else // new layout
-            {
-                if (m_nRaceType != RaceTypes.SingleLane)
+                Size size = new Size
                 {
-                    this.bnRefreshList.Parent = this.groupRight;
-                    this.cbPreviousData.Parent = this.groupRight;
-                    Size size = new Size
-                    {
-                        Height = 0x67,
-                        Width = 0x177
-                    };
-                    this.groupLeft.Size = size;
-                    System.Drawing.Point location = new System.Drawing.Point
-                    {
-                        X = 0,
-                        Y = 0
-                    };
-                    this.groupLeft.Location = location;
-                    location = this.cbLeftRider.Location;
-                    location.X = 6;
-                    location.Y = 15;
-                    this.cbLeftRider.Location = location;
-                    location.X = 6;
-                    location.Y = 0x3f;
-                    this.tbLeftReaction.Location = location;
-                    location.X = 0x57;
-                    location.Y = 0x3f;
-                    this.tbLeftRaw.Location = location;
-                    location.X = 0xb5;
-                    location.Y = 0x3e;
-                    this.cbLeftCones.Location = location;
+                    Height = 0x35,
+                    Width = 0x284
+                };
+                this.groupLeft.Size = size;
+                System.Drawing.Point location = new System.Drawing.Point
+                {
+                    X = 0,
+                    Y = 0
+                };
+                this.groupLeft.Location = location;
+                location.X = 6;
+                location.Y = 15;
+                this.cbLeftRider.Location = location;
+                location.X = 370;
+                location.Y = 15;
+                this.tbLeftReaction.Location = location;
+                location.X = 0x1c3;
+                location.Y = 15;
+                this.tbLeftRaw.Location = location;
+                location.X = 0x221;
+                location.Y = 14;
+                this.cbLeftCones.Location = location;
+                location.X = 0x290;
+                location.Y = 8;
+                this.bnSaveLeft.Location = location;
+                location.X = 6;
+                location.Y = 15;
+                this.cbRigthRider.Location = location;
+                location.X = 370;
+                location.Y = 15;
+                this.tbRightReaction.Location = location;
+                location.X = 0x1c3;
+                location.Y = 15;
+                this.tbRightRaw.Location = location;
+                location.X = 0x221;
+                location.Y = 14;
+                this.cbRightCones.Location = location;
+                location.X = 0x290;
+                location.Y = 0x3a;
+                this.bnSaveRight.Location = location;
+                location.X = 770;
+                location.Y = 8;
+                this.bnReset.Location = location;
+                location.X = 770;
+                location.Y = 0x54;
+                this.bnRefreshList.Location = location;
+                location.X = 0x16d;
+                location.Y = -1;
+                this.label7.Location = location;
+                location.X = 0x1c3;
+                location.Y = -1;
+                this.label8.Location = location;
+                location.X = 0x221;
+                location.Y = -1;
+                this.label9.Location = location;
+                location.X = 0x16d;
+                location.Y = -1;
+                this.label14.Location = location;
+                location.X = 0x1c3;
+                location.Y = -1;
+                this.label13.Location = location;
+                location.X = 0x221;
+                location.Y = -1;
+                this.label6.Location = location;
+                size = new Size
+                {
+                    Height = 0x35,
+                    Width = 0x284
+                };
+                this.groupRight.Size = size;
+                location = new System.Drawing.Point
+                {
+                    X = 0,
+                    Y = 0x34
+                };
+                this.groupRight.Location = location;
+                this.groupRight.Visible = true;
+                this.groupLeft.Visible = true;
+                this.label14.Visible = false;
+                this.label13.Visible = false;
+                this.label6.Visible = false;
+                if (m_nRaceType == RaceTypes.SingleLane)
+                {
+                    this.groupRight.Visible = false;
+                    this.label14.Visible = false;
+                    this.label13.Visible = false;
+                    this.label6.Visible = false;
+                    this.cbRigthRider.Visible = false;
+                    this.tbRightReaction.Visible = false;
+                    this.tbRightRaw.Visible = false;
+                    this.cbRightCones.Visible = false;
+                    this.bnSaveRight.Visible = false;
+                    this.groupLeft.Text = "Rider";
                     location.X = 770;
-                    location.Y = 0x3d;
-                    this.bnSaveLeft.Location = location;
-                    location.X = 6;
-                    location.Y = 15;
-                    this.cbRigthRider.Location = location;
-                    location.X = 6;
-                    location.Y = 0x3f;
-                    this.tbRightReaction.Location = location;
-                    location.X = 0x57;
-                    location.Y = 0x3f;
-                    this.tbRightRaw.Location = location;
-                    location.X = 0xb5;
-                    location.Y = 0x3e;
-                    this.cbRightCones.Location = location;
-                    location.X = 770;
-                    location.Y = 0x3d;
-                    this.bnSaveRight.Location = location;
-                    location.X = 770;
-                    location.Y = 6;
-                    this.bnReset.Location = location;
-                    location.X = 0x291;
-                    location.Y = 0x34;
+                    location.Y = 0x36;
                     this.bnRefreshList.Location = location;
+                    location = this.cbPreviousData.Location;
+                    location.X = 660;
+                    location.Y = 0x36;
+                    this.cbPreviousData.Location = location;
+                    size = this.tbPrevData.Size;
+                    size.Height = 0x9b;
+                    this.tbPrevData.Size = size;
                     location.X = 5;
-                    location.Y = 0x31;
-                    this.label7.Location = location;
-                    location.X = 0x54;
-                    location.Y = 0x31;
-                    this.label8.Location = location;
-                    location.X = 0xb2;
-                    location.Y = 0x31;
-                    this.label9.Location = location;
-                    location.X = 5;
-                    location.Y = 0x31;
-                    this.label14.Location = location;
-                    location.X = 0x54;
-                    location.Y = 0x31;
-                    this.label13.Location = location;
-                    location.X = 0xb2;
-                    location.Y = 0x31;
-                    this.label6.Location = location;
-                    size = new Size
-                    {
-                        Height = 0x67,
-                        Width = 0x177
-                    };
-                    this.groupRight.Size = size;
-                    location = new System.Drawing.Point
-                    {
-                        X = 390,
-                        Y = 0
-                    };
-                    this.groupRight.Location = location;
+                    location.Y = 0x3a;
+                    this.tbPrevData.Location = location;
+                }
+                else
+                {
                     this.groupRight.Visible = true;
-                    this.groupLeft.Visible = true;
                     this.label14.Visible = true;
                     this.label13.Visible = true;
                     this.label6.Visible = true;
@@ -1888,68 +1784,169 @@ namespace ExcelMate
                     this.tbRightReaction.Visible = true;
                     this.tbRightRaw.Visible = true;
                     this.cbRightCones.Visible = true;
+                    this.groupLeft.Text = "Left";
                     location = this.cbPreviousData.Location;
-                    location.X = 0x106;
-                    location.Y = 80;
+                    location.X = 0x290;
+                    location.Y = 0x57;
                     this.cbPreviousData.Location = location;
-                    location = this.cbPreviousData.Location;
-                    location.X = 260;
-                    location.Y = 0x3d;
-                    this.bnRefreshList.Location = location;
                     size = this.tbPrevData.Size;
-                    size.Height = 0x6c;
+                    size.Height = 110;
                     this.tbPrevData.Size = size;
                     location.X = 5;
-                    location.Y = 0x6b;
+                    location.Y = 0x69;
                     this.tbPrevData.Location = location;
                 }
-                else
-                {
-                    System.Drawing.Point pt = cbLeftRider.Location;
-                    pt.X = 46;
-                    pt.Y = 14;
-                    cbLeftRider.Location = pt;
-                    pt.X = 408;
-                    pt.Y = 14;
-                    tbLeftReaction.Location = pt;
-                    pt.X = 489;
-                    pt.Y = 14;
-                    tbLeftRaw.Location = pt;
-                    pt.X = 583;
-                    pt.Y = 13;
-                    cbLeftCones.Location = pt;
-                    pt.X = 658;
-                    pt.Y = 13;
-                    bnSaveLeft.Location = pt;
-
-                    label4.Visible = false;
-                    label14.Visible = false;
-                    label13.Visible = false;
-                    label6.Visible = false;
-
-                    cbRigthRider.Visible = false;
-                    tbRightReaction.Visible = false;
-                    tbRightRaw.Visible = false;
-                    cbRightCones.Visible = false;
-
-                    bnSaveRight.Visible = false;
-
-                    label3.Text = "Rider";
-
-                    pt = cbPreviousData.Location;
-                    pt.X = 660;
-                    pt.Y = 54;
-                    cbPreviousData.Location = pt;
-
-                    Size sz = tbPrevData.Size;
-                    sz.Height = 155;
-                    tbPrevData.Size = sz;
-                    pt.X = 44;
-                    pt.Y = 52;
-                    tbPrevData.Location = pt;
-                }
             }
-            if (this.cbColor.Checked)
+            else if (m_nRaceType > RaceTypes.SingleLane)
+            {
+                this.bnRefreshList.Parent = this.groupRight;
+                this.cbPreviousData.Parent = this.groupRight;
+                Size size = new Size
+                {
+                    Height = 0x67,
+                    Width = 0x177
+                };
+                this.groupLeft.Size = size;
+                System.Drawing.Point location = new System.Drawing.Point
+                {
+                    X = 0,
+                    Y = 0
+                };
+                this.groupLeft.Location = location;
+                location = this.cbLeftRider.Location;
+                location.X = 6;
+                location.Y = 15;
+                this.cbLeftRider.Location = location;
+                location.X = 6;
+                location.Y = 0x3f;
+                this.tbLeftReaction.Location = location;
+                location.X = 0x57;
+                location.Y = 0x3f;
+                this.tbLeftRaw.Location = location;
+                location.X = 0xb5;
+                location.Y = 0x3e;
+                this.cbLeftCones.Location = location;
+                location.X = 770;
+                location.Y = 0x3d;
+                this.bnSaveLeft.Location = location;
+                location.X = 6;
+                location.Y = 15;
+                this.cbRigthRider.Location = location;
+                location.X = 6;
+                location.Y = 0x3f;
+                this.tbRightReaction.Location = location;
+                location.X = 0x57;
+                location.Y = 0x3f;
+                this.tbRightRaw.Location = location;
+                location.X = 0xb5;
+                location.Y = 0x3e;
+                this.cbRightCones.Location = location;
+                location.X = 770;
+                location.Y = 0x3d;
+                this.bnSaveRight.Location = location;
+                location.X = 770;
+                location.Y = 6;
+                this.bnReset.Location = location;
+                location.X = 0x291;
+                location.Y = 0x34;
+                this.bnRefreshList.Location = location;
+                location.X = 5;
+                location.Y = 0x31;
+                this.label7.Location = location;
+                location.X = 0x54;
+                location.Y = 0x31;
+                this.label8.Location = location;
+                location.X = 0xb2;
+                location.Y = 0x31;
+                this.label9.Location = location;
+                location.X = 5;
+                location.Y = 0x31;
+                this.label14.Location = location;
+                location.X = 0x54;
+                location.Y = 0x31;
+                this.label13.Location = location;
+                location.X = 0xb2;
+                location.Y = 0x31;
+                this.label6.Location = location;
+                size = new Size
+                {
+                    Height = 0x67,
+                    Width = 0x177
+                };
+                this.groupRight.Size = size;
+                location = new System.Drawing.Point
+                {
+                    X = 390,
+                    Y = 0
+                };
+                this.groupRight.Location = location;
+                this.groupRight.Visible = true;
+                this.groupLeft.Visible = true;
+                this.label14.Visible = true;
+                this.label13.Visible = true;
+                this.label6.Visible = true;
+                this.cbRigthRider.Visible = true;
+                this.tbRightReaction.Visible = true;
+                this.tbRightRaw.Visible = true;
+                this.cbRightCones.Visible = true;
+                location = this.cbPreviousData.Location;
+                location.X = 0x106;
+                location.Y = 80;
+                this.cbPreviousData.Location = location;
+                location = this.cbPreviousData.Location;
+                location.X = 260;
+                location.Y = 0x3d;
+                this.bnRefreshList.Location = location;
+                size = this.tbPrevData.Size;
+                size.Height = 0x6c;
+                this.tbPrevData.Size = size;
+                location.X = 5;
+                location.Y = 0x6b;
+                this.tbPrevData.Location = location;
+            }
+            else
+            {
+                System.Drawing.Point location = this.cbLeftRider.Location;
+                location.X = 6;
+                location.Y = 15;
+                this.cbLeftRider.Location = location;
+                location.X = 370;
+                location.Y = 15;
+                this.tbLeftReaction.Location = location;
+                location.X = 0x1c3;
+                location.Y = 15;
+                this.tbLeftRaw.Location = location;
+                location.X = 0x221;
+                location.Y = 14;
+                this.cbLeftCones.Location = location;
+                location.X = 0x290;
+                location.Y = 8;
+                this.bnSaveLeft.Location = location;
+                this.groupRight.Visible = false;
+                this.label14.Visible = false;
+                this.label13.Visible = false;
+                this.label6.Visible = false;
+                this.cbRigthRider.Visible = false;
+                this.tbRightReaction.Visible = false;
+                this.tbRightRaw.Visible = false;
+                this.cbRightCones.Visible = false;
+                this.bnSaveRight.Visible = false;
+                this.groupLeft.Text = "Rider";
+                location.X = 770;
+                location.Y = 0x36;
+                this.bnRefreshList.Location = location;
+                location = this.cbPreviousData.Location;
+                location.X = 660;
+                location.Y = 0x36;
+                this.cbPreviousData.Location = location;
+                Size size = this.tbPrevData.Size;
+                size.Height = 0x9b;
+                this.tbPrevData.Size = size;
+                location.X = 5;
+                location.Y = 0x3a;
+                this.tbPrevData.Location = location;
+            }
+            if (this.cbColors.Checked)
             {
                 if (this.cbRightColor.SelectedIndex != 0)
                 {
@@ -1964,244 +1961,66 @@ namespace ExcelMate
                 }
                 this.groupLeft.Text = (string)this.cbLeftColor.SelectedItem;
             }
-            if (tabControl1.SelectedIndex != 0 && cbDisplays.Checked && (cbComPort.Text == cbDisplayPortLeft.Text || cbComPort.Text == cbDisplayPortRight.Text || cbDisplayPortLeft.Text == cbDisplayPortRight.Text))
+            if (((this.tabControl1.SelectedIndex != 0) && this.cbDisplays.Checked) && (((this.cbComPort.Text == this.cbDisplayPortLeft.Text) || (this.cbComPort.Text == this.cbDisplayPortRight.Text)) || (this.cbDisplayPortLeft.Text == this.cbDisplayPortRight.Text)))
             {
-                MacMessageBox MMB = new MacMessageBox("You need to select different comports for each connection if you're using external displays.");
-                MMB.StartPosition = FormStartPosition.CenterParent;
-                MMB.ShowDialog();
-                tabControl1.SelectedIndex = 0;
+                new MacMessageBox("You need to select different comports for each connection if you're using external displays.") { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+                this.tabControl1.SelectedIndex = 0;
             }
-            if (tabControl1.SelectedIndex != 0 && (tbFileName.Text.Length == 0 || theWorkbook == null))
+            if ((this.tabControl1.SelectedIndex != 0) && ((this.tbFileName.Text.Length == 0) || (this.theWorkbook == null)))
             {
-                MacMessageBox MMB = new MacMessageBox("Please select an Excel file.");
-                MMB.StartPosition = FormStartPosition.CenterParent;
-                MMB.ShowDialog();
-                tabControl1.SelectedIndex = 0;
+                new MacMessageBox("Please select an Excel file.") { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+                this.tabControl1.SelectedIndex = 0;
             }
-            if (tabControl1.SelectedIndex != 0 && m_nRaceType == RaceTypes.NotSet)
+            if ((this.tabControl1.SelectedIndex != 0) && (m_nRaceType == RaceTypes.NotSet))
             {
-                MacMessageBox MMB = new MacMessageBox("Please select worksheet.");
-                MMB.StartPosition = FormStartPosition.CenterParent;
-                MMB.ShowDialog();
-                tabControl1.SelectedIndex = 0;
+                new MacMessageBox("Please select worksheet.") { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+                this.tabControl1.SelectedIndex = 0;
             }
-            if (tabControl1.SelectedIndex != 0 && m_nRaceType == RaceTypes.Elimination && cbRound.SelectedIndex == -1)
+            if (((this.tabControl1.SelectedIndex != 0) && (m_nRaceType == RaceTypes.Elimination)) && (this.cbRound.SelectedIndex == -1))
             {
-                MacMessageBox MMB = new MacMessageBox("Please select which round of the race we are running.");
-                MMB.StartPosition = FormStartPosition.CenterParent;
-                MMB.ShowDialog();
-                tabControl1.SelectedIndex = 0;
+                new MacMessageBox("Please select which round of the race we are running.") { StartPosition = FormStartPosition.CenterParent }.ShowDialog();
+                this.tabControl1.SelectedIndex = 0;
             }
-
-            if (cbDiscardReactionTimes.Checked)
+            if (this.cbDiscardReactionTimes.Checked)
             {
-                tbRightReaction.BackColor = Color.Gray;
-                tbLeftReaction.BackColor = Color.Gray;            
+                this.tbRightReaction.BackColor = Color.Gray;
+                this.tbLeftReaction.BackColor = Color.Gray;
             }
             else
             {
-                tbRightReaction.BackColor = Color.White;
-                tbLeftReaction.BackColor = Color.White;
+                this.tbRightReaction.BackColor = Color.White;
+                this.tbLeftReaction.BackColor = Color.White;
             }
-
-            if (tabControl1.SelectedIndex == 0)
+            if (this.tabControl1.SelectedIndex == 0)
             {
-                    this.Height = 171;
+                base.Height = 0xa1;
+            }
+            else if (m_nRaceType == RaceTypes.SingleLane)
+            {
+                base.Height = 0x83;
             }
             else
             {
-                if (m_nRaceType == RaceTypes.SingleLane){
-                    this.Height = 131;
-                }else{
-                    this.Height = 151;
-                }
+                base.Height = 0xa1;
             }
-
         }
 
-        // Kanske att vi ska titta på den här
-        private void cbPreviousData_CheckedChanged(object sender, EventArgs e)
+        private string URLEncode(string text)
         {
-            if (m_nRaceType == RaceTypes.SingleLane)
+            char[] chArray = text.ToCharArray();
+            string str = "";
+            foreach (char ch in chArray)
             {
-                if (cbPreviousData.Checked)
+                if (ch > '\x0080')
                 {
-                    tbPrevData.Visible = true;
-                    this.Height = 270;
+                    str = str + "%" + ((int)ch).ToString("X");
                 }
                 else
                 {
-                    tbPrevData.Visible = false;
-                    this.Height = 131;
+                    str = str + ch.ToString();
                 }
             }
-            else
-            {
-                if (cbPreviousData.Checked)
-                {
-                    tbPrevData.Visible = true;
-                    this.Height = 270;
-                }
-                else
-                {
-                    tbPrevData.Visible = false;
-                    this.Height = 151;
-                }
-            }
-        }
-
-        private void cbLiveReport_CheckedChanged(object sender, EventArgs e)
-        {
-            if (cbLiveReport.Checked)
-            {
-                label15.Visible = true;
-                tbLiveId.Visible = true;
-                tbLiveId.Enabled = true;
-                label16.Visible = true;
-                tbLiveEventId.Visible = true;
-                tbLiveEventId.Enabled = true;
-                bnCheckId.Visible = true;
-            }
-            else
-            {
-                label15.Visible = false;
-                tbLiveId.Visible = false;
-                tbLiveId.Enabled = false;
-                label16.Visible = false;
-                tbLiveEventId.Visible = false;
-                tbLiveEventId.Enabled = false;
-                bnCheckId.Visible = false;
-            }
-        }
-
-        private void LeftConesChanged(object sender, EventArgs e)
-        {
-            if (cbLeftCones.SelectedItem.ToString() == "DQ")
-            {
-                MacMessageBox MMB = new MacMessageBox("Should this race be a DQ?", MessageBoxButtons.OKCancel);
-                MMB.StartPosition = FormStartPosition.CenterParent;
-                MMB.ShowDialog();
-                if (MMB.DialogResult == DialogResult.OK)
-                {
-                    cbLeftCones.SelectedIndex = 0;
-                    tbLeftRaw.Text = "DQ";
-                }
-            }
-        }
-
-        private void RightConesChanged(object sender, EventArgs e)
-        {
-            if (cbRightCones.SelectedItem.ToString() == "DQ")
-            {
-                MacMessageBox MMB = new MacMessageBox("Should this race be a DQ?", MessageBoxButtons.OKCancel);
-                MMB.StartPosition = FormStartPosition.CenterParent;
-                MMB.ShowDialog();
-                if (MMB.DialogResult == DialogResult.OK)
-                {
-                    cbRightCones.SelectedIndex = 0;
-                    tbRightRaw.Text = "DQ";
-                }
-            }
-        }
-
-        private void bnCheckId_Click(object sender, EventArgs e)
-        {
-            MacMessageBox MMB = new MacMessageBox("This check can take 30 seconds, please be patient", MessageBoxButtons.OK);
-            MMB.StartPosition = FormStartPosition.CenterParent;
-            MMB.ShowDialog();
-
-            try
-            {
-                String URL = "";
-                if (tbLiveId.Text == "666")
-                {
-                    if (m_strReportSiteSelection == "")
-                    {
-                        if (MessageBox.Show("Klicka 'ja' för 161 eller 'nej' för att rapportera till wcrank", "välj DB", MessageBoxButtons.YesNo) == DialogResult.Yes)
-                        {
-                            m_strReportSiteSelection = "http://www.ettsexett.com/live/admin/checkEvent.asp?eventId=" + tbLiveEventId.Text + "&ISSAId=" + tbLiveId.Text;
-                        }
-                        else
-                        {
-                            m_strReportSiteSelection = "http://www.worldcupranking.com/live/admin/checkEvent.asp?eventId=" + tbLiveEventId.Text + "&ISSAId=" + tbLiveId.Text;
-                        }
-                    }
-                    URL = m_strReportSiteSelection;
-                }
-                else
-                {
-                    URL = "http://www.worldcupranking.com/live/admin/checkEvent.asp?eventId=" + tbLiveEventId.Text +"&ISSAId="+ tbLiveId.Text;
-                }
-
-                WebRequest request = WebRequest.Create(URL);
-
-                // If required by the server, set the credentials.
-                request.Credentials = CredentialCache.DefaultCredentials;
-
-                // Get the response.
-                HttpWebResponse response = (HttpWebResponse)request.GetResponse();
-
-                // HÄMTA HEM DET HELA HÄR
-                Encoding enc = System.Text.Encoding.GetEncoding(1252);
-                StreamReader loResponseStream = new StreamReader(response.GetResponseStream(), enc);
-                String strResponse = loResponseStream.ReadToEnd();
-
-                MMB = new MacMessageBox(strResponse, MessageBoxButtons.OK);
-                MMB.StartPosition = FormStartPosition.CenterParent;
-                MMB.ShowDialog();
-
-                loResponseStream.Close();
-                response.Close();
-            }
-            catch (Exception ex)
-            {
-                String err = ex.Message;
-            }
-        }
-
-        private void bnLogfile_Click(object sender, EventArgs e)
-        {
-            this.openFileDialog1.FileName = "*.log";
-            if (this.openFileDialog1.ShowDialog() == DialogResult.OK)
-            {
-                this.m_strLogFile = this.openFileDialog1.FileName;
-            }
-        }
-
-
-        private void cbColors_CheckedChanged(object sender, EventArgs e)
-        {
-            if (this.cbColor.Checked)
-            {
-                this.cbLeftColor.Enabled = true;
-                this.cbRightColor.Enabled = true;
-            }
-            else
-            {
-                this.cbLeftColor.Enabled = false;
-                this.cbRightColor.Enabled = false;
-                this.cbLeftColor.SelectedIndex = 0;
-                this.cbRightColor.SelectedIndex = 0;
-            }
-        }
-
-        private Color GetColor(string name)
-        {
-            switch (name)
-            {
-                case "Red":
-                    return Color.Red;
-
-                case "Green":
-                    return Color.Green;
-
-                case "Orange":
-                    return Color.Orange;
-
-                case "Blue":
-                    return Color.Blue;
-            }
-            return Color.White;
+            return str;
         }
 
         private void WriteToLogfile(string message)
@@ -2210,9 +2029,9 @@ namespace ExcelMate
             {
                 if (this.cbLog2File.Checked)
                 {
-                    if (!File.Exists(this.m_strLogFile))
+                    if (!System.IO.File.Exists(this.m_strLogFile))
                     {
-                        File.Create(this.m_strLogFile);
+                        System.IO.File.Create(this.m_strLogFile);
                     }
                     StreamWriter writer = new StreamWriter(this.m_strLogFile, true);
                     writer.WriteLine(message + " --- " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
@@ -2225,5 +2044,20 @@ namespace ExcelMate
             }
         }
 
+        private enum Lane
+        {
+            Left = 1,
+            Right = 2
+        }
+
+        private enum RaceTypes
+        {
+            NotSet = -1,
+            SingleLane = 0,
+            Qualification = 1,
+            Elimination = 2
+        }
+
+        public delegate void TrackMateCallback(string message, int lane, int type);
     }
 }
