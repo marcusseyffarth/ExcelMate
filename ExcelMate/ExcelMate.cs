@@ -531,7 +531,6 @@ namespace ExcelMate
                 else
                 {
                     this.cbRound.Enabled = true;
-                    this.bnRefreshList.Visible = false;
                     Array values = (Array)wS.get_Range("B1", "B99").Cells.Value2;
                     string[] strArray = this.ConvertToStringArray(values);
                     foreach (string str in strArray)

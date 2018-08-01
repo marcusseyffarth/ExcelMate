@@ -3,8 +3,6 @@ namespace ExcelMate
     using System.Drawing;
     using System.Windows.Forms;
     using System;
-    using Mac.Excel9.Interop;
-    using System.ComponentModel;
     using System.Diagnostics;
 
     partial class mExcelMate
@@ -35,8 +33,7 @@ namespace ExcelMate
         /// </summary>
         private void InitializeComponent()
         {
-            ComponentResourceManager manager = new ComponentResourceManager(typeof(mExcelMate));
-            this.bnSaveLeft = new System.Windows.Forms.Button();
+            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(mExcelMate)); this.bnSaveLeft = new System.Windows.Forms.Button();
             this.tbLeftRaw = new System.Windows.Forms.TextBox();
             this.openFileDialog1 = new OpenFileDialog();
             this.bnOpenWorkBook = new System.Windows.Forms.Button();
@@ -528,6 +525,15 @@ namespace ExcelMate
             this.label9.Size = new Size(0x25, 13);
             this.label9.TabIndex = 0x1a;
             this.label9.Text = "Cones";
+            this.bnRefreshList.Location = new System.Drawing.Point(770, 0x54);
+            this.bnRefreshList.Margin = new Padding(2, 3, 2, 3);
+            this.bnRefreshList.Name = "bnRefreshList";
+            this.bnRefreshList.Size = new Size(0x6d, 0x13);
+            this.bnRefreshList.TabIndex = 0x25;
+            this.bnRefreshList.TabStop = false;
+            this.bnRefreshList.Text = "Refresh racers";
+            this.bnRefreshList.UseVisualStyleBackColor = true;
+            this.bnRefreshList.Click += new EventHandler(this.bnRefreshList_Click);
             this.cbLeftCones.BackColor = Color.White;
             this.cbLeftCones.DropDownStyle = ComboBoxStyle.DropDownList;
             this.cbLeftCones.Font = new System.Drawing.Font("Microsoft Sans Serif", 14.25f, FontStyle.Regular, GraphicsUnit.Point, 0);
@@ -691,15 +697,6 @@ namespace ExcelMate
             this.groupLeft.TabIndex = 0x26;
             this.groupLeft.TabStop = false;
             this.groupLeft.Text = "Left";
-            this.bnRefreshList.Location = new System.Drawing.Point(770, 0x54);
-            this.bnRefreshList.Margin = new Padding(2, 3, 2, 3);
-            this.bnRefreshList.Name = "bnRefreshList";
-            this.bnRefreshList.Size = new Size(0x6d, 0x13);
-            this.bnRefreshList.TabIndex = 0x25;
-            this.bnRefreshList.TabStop = false;
-            this.bnRefreshList.Text = "Refresh racers";
-            this.bnRefreshList.UseVisualStyleBackColor = true;
-            this.bnRefreshList.Click += new EventHandler(this.bnRefreshList_Click);
             base.AutoScaleDimensions = new SizeF(6f, 13f);
             base.AutoScaleMode = AutoScaleMode.Font;
             this.BackColor = Color.White;
@@ -707,7 +704,7 @@ namespace ExcelMate
             base.Controls.Add(this.tabControl1);
             this.ForeColor = Color.Black;
             base.FormBorderStyle = FormBorderStyle.FixedSingle;
-            base.Icon = (Icon)manager.GetObject("$this.Icon");
+            this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             base.Margin = new Padding(2, 3, 2, 3);
             base.MaximizeBox = false;
             base.MinimizeBox = false;
